@@ -75,12 +75,13 @@ ${buildIconsScriptDecl()}
                 renderRecords(allRecords);
                 break;
             case 'draft': {
-                const prevMode = currentDraft ? (currentDraft.mode || 'live') : null;
+                const prevHadDraft = currentDraft !== null;
                 currentDraft = msg.draft || null;
-                const nextMode = currentDraft ? (currentDraft.mode || 'live') : null;
-                const wasHiding = prevMode === 'live' || prevMode === 'recording' || prevMode === 'transcribing';
-                const isHiding = nextMode === 'live' || nextMode === 'recording' || nextMode === 'transcribing';
-                if (wasHiding !== isHiding) {
+                const nowHasDraft = currentDraft !== null;
+                // Re-render the list only when the draft card itself appears or disappears,
+                // so the empty-state placeholder toggles correctly. The record list ordering
+                // is pure chronology and never depends on draft mode.
+                if (prevHadDraft !== nowHasDraft && (allRecords.length === 0)) {
                     renderRecords(allRecords);
                 } else {
                     updateDraftCard();
@@ -240,17 +241,14 @@ ${buildIconsScriptDecl()}
             return;
         }
 
+        // Strict chronological order, newest on top. Status (copied / unread / recording)
+        // never influences ordering or visibility of saved records. The draft card for an
+        // in-progress recording is rendered separately above by updateDraftCard().
         const sorted = records.slice().sort(function(a, b) {
             return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
         });
 
-        const draftMode = currentDraft ? (currentDraft.mode || 'live') : null;
-        const hideTopWhileRecording = draftMode === 'live' || draftMode === 'recording' || draftMode === 'transcribing';
-        console.log('[voice-log] renderRecords: draftMode=', draftMode, 'hideTop=', hideTopWhileRecording, 'recordsCount=', sorted.length);
-        const source = hideTopWhileRecording ? sorted.slice(1) : sorted;
-        const visible = showAll ? source : source.slice(0, 1);
-        const hiddenCount = sorted.length - visible.length;
-
+        const visible = showAll ? sorted : sorted.slice(0, 1);
         visible.forEach(r => list.appendChild(buildCard(r)));
 
         updateDraftCard();
