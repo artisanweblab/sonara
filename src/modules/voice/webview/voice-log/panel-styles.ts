@@ -2,15 +2,17 @@ export const PANEL_STYLES = `
 .log-list {
     flex: 1;
     overflow-y: auto;
-    padding: 4px 0;
+    padding: 4px 10px;
 }
 
 .record-card {
     padding: 8px 10px;
-    border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
+    margin-bottom: 2px;
+    border-radius: 3px;
     cursor: default;
     transition: background 0.1s;
 }
+.record-card:last-child { margin-bottom: 0; }
 .record-card:hover { background: var(--vscode-list-hoverBackground); }
 .record-card.unread { background: color-mix(in srgb, var(--vscode-charts-green) 8%, transparent); }
 .record-card.unread:hover { background: color-mix(in srgb, var(--vscode-charts-green) 14%, transparent); }

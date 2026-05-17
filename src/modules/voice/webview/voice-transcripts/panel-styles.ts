@@ -2,15 +2,17 @@ export const TRANSCRIPTS_PANEL_STYLES = `
 .transcript-list {
     flex: 1;
     overflow-y: auto;
-    padding: 4px 0;
+    padding: 4px 10px;
 }
 
 .transcript-card {
     padding: 8px 10px;
-    border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
+    margin-bottom: 2px;
+    border-radius: 3px;
     cursor: default;
     transition: background 0.1s;
 }
+.transcript-card:last-child { margin-bottom: 0; }
 .transcript-card:hover { background: var(--vscode-list-hoverBackground); }
 
 .transcript-name {
