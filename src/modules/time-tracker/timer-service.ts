@@ -52,7 +52,7 @@ export class TimerService implements vscode.Disposable {
     }
 
     public getStoredActiveSlug(): string | null {
-        return this.context.globalState.get<string>(ACTIVE_SLUG_STATE) ?? null;
+        return this.context.workspaceState.get<string>(ACTIVE_SLUG_STATE) ?? null;
     }
 
     public async start(slug: string): Promise<void> {
@@ -67,7 +67,7 @@ export class TimerService implements vscode.Disposable {
 
         this.activeSlug = slug;
         this.taskMissingNotified = false;
-        await this.context.globalState.update(ACTIVE_SLUG_STATE, slug);
+        await this.context.workspaceState.update(ACTIVE_SLUG_STATE, slug);
 
         const today = localDateKey(new Date());
         await dayStore.recomputeTotal(userKey, today, slug);
@@ -99,7 +99,7 @@ export class TimerService implements vscode.Disposable {
     }
 
     public async clearStoredActive(): Promise<void> {
-        await this.context.globalState.update(ACTIVE_SLUG_STATE, undefined);
+        await this.context.workspaceState.update(ACTIVE_SLUG_STATE, undefined);
         this.activeSlug = null;
     }
 
@@ -135,7 +135,7 @@ export class TimerService implements vscode.Disposable {
     private async stopInternal(emit: boolean): Promise<void> {
         const slug = this.activeSlug;
         this.activeSlug = null;
-        await this.context.globalState.update(ACTIVE_SLUG_STATE, undefined);
+        await this.context.workspaceState.update(ACTIVE_SLUG_STATE, undefined);
         this.tick.stop();
         if (slug) {
             const userKey = this.identity.get();
