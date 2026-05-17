@@ -32,6 +32,13 @@ export interface FileTranscribeProgress {
     totalSec: number;
 }
 
+export class TranscriptionCancelledError extends Error {
+    constructor() {
+        super('Transcription cancelled');
+        this.name = 'TranscriptionCancelledError';
+    }
+}
+
 export interface StreamingPartial {
     confirmedText: string;
     pendingText: string;
@@ -113,19 +120,32 @@ export class ApiClient {
         language: string | null,
         onProgress: (progress: FileTranscribeProgress) => void,
         initialPrompt: string | null = null,
+        signal: AbortSignal | null = null,
     ): Promise<FileTranscribeResult> {
-        const response = await fetch(`${this.baseUrl}/transcribe-file`, {
-            method: 'POST',
-            headers: {
-                'X-Extension-Token': this.token,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                path: filePath,
-                language: language ?? undefined,
-                initial_prompt: initialPrompt ?? undefined,
-            }),
-        });
+        const isAbortError = (err: unknown): boolean =>
+            err instanceof Error && (err.name === 'AbortError' || (signal !== null && signal.aborted));
+
+        let response: Response;
+        try {
+            response = await fetch(`${this.baseUrl}/transcribe-file`, {
+                method: 'POST',
+                headers: {
+                    'X-Extension-Token': this.token,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    path: filePath,
+                    language: language ?? undefined,
+                    initial_prompt: initialPrompt ?? undefined,
+                }),
+                signal: signal ?? undefined,
+            });
+        } catch (err) {
+            if (isAbortError(err)) {
+                throw new TranscriptionCancelledError();
+            }
+            throw err;
+        }
 
         if (!response.ok) {
             const text = await response.text().catch(() => '');
@@ -140,38 +160,50 @@ export class ApiClient {
         let buffer = '';
         let finalResult: FileTranscribeResult | null = null;
 
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-                break;
-            }
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() ?? '';
-
-            for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed) {
-                    continue;
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    break;
                 }
-                const msg = JSON.parse(trimmed) as
-                    | { type: 'progress'; current_sec: number; total_sec: number }
-                    | { type: 'result'; segments: TranscribedSegment[]; language: string; duration_sec: number; processing_time_sec: number }
-                    | { type: 'error'; message: string };
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() ?? '';
 
-                if (msg.type === 'progress') {
-                    onProgress({ currentSec: msg.current_sec, totalSec: msg.total_sec });
-                } else if (msg.type === 'result') {
-                    finalResult = {
-                        segments: msg.segments,
-                        language: msg.language,
-                        durationSec: msg.duration_sec,
-                        processingTimeSec: msg.processing_time_sec,
-                    };
-                } else if (msg.type === 'error') {
-                    throw new Error(msg.message);
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed) {
+                        continue;
+                    }
+                    const msg = JSON.parse(trimmed) as
+                        | { type: 'progress'; current_sec: number; total_sec: number }
+                        | { type: 'result'; segments: TranscribedSegment[]; language: string; duration_sec: number; processing_time_sec: number }
+                        | { type: 'error'; message: string };
+
+                    if (msg.type === 'progress') {
+                        onProgress({ currentSec: msg.current_sec, totalSec: msg.total_sec });
+                    } else if (msg.type === 'result') {
+                        finalResult = {
+                            segments: msg.segments,
+                            language: msg.language,
+                            durationSec: msg.duration_sec,
+                            processingTimeSec: msg.processing_time_sec,
+                        };
+                    } else if (msg.type === 'error') {
+                        throw new Error(msg.message);
+                    }
                 }
             }
+        } catch (err) {
+            if (isAbortError(err)) {
+                try {
+                    await reader.cancel();
+                } catch {
+                    // reader already closed, ignore
+                }
+                throw new TranscriptionCancelledError();
+            }
+            throw err;
         }
 
         if (!finalResult) {

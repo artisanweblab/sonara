@@ -51,7 +51,7 @@ _force_tqdm_progress_even_without_tty()
 
 import numpy as np
 import uvicorn
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
@@ -358,6 +358,7 @@ async def transcribe(
 )
 async def transcribe_file(
     body: TranscribeFileRequest,
+    request: Request,
     x_extension_token: str = Header(...),
 ) -> StreamingResponse:
     verify_token(x_extension_token)
@@ -370,7 +371,9 @@ async def transcribe_file(
 
     queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
+    abort_event = threading.Event()
     progress_interval_sec = 1.0
+    disconnect_poll_interval_sec = 0.5
 
     def worker() -> None:
         try:
@@ -385,7 +388,11 @@ async def transcribe_file(
                 {"type": "progress", "current_sec": 0.0, "total_sec": duration},
             )
 
+            cancelled = False
             for seg in segments:
+                if abort_event.is_set():
+                    cancelled = True
+                    break
                 cleaned_text = sanitize_transcription(seg.text, info.language)
                 if not cleaned_text.strip():
                     continue
@@ -401,6 +408,17 @@ async def transcribe_file(
                         {"type": "progress", "current_sec": float(seg.end), "total_sec": duration},
                     )
                     last_wall = now
+
+            if cancelled:
+                # Best-effort close of the underlying generator so faster-whisper releases resources.
+                close_fn = getattr(segments, "close", None)
+                if callable(close_fn):
+                    try:
+                        close_fn()
+                    except Exception as exc:
+                        logger.debug("segments.close() raised: {}", exc)
+                logger.info("Transcription cancelled by client: {}", body.path)
+                return
 
             processing_time = round(time.time() - t0, 3)
             logger.info(
@@ -419,6 +437,9 @@ async def transcribe_file(
                 "processing_time_sec": processing_time,
             })
         except Exception as exc:
+            if abort_event.is_set():
+                logger.info("Transcription cancelled by client (during exception): {}", body.path)
+                return
             logger.error("File transcribe failed: {}", exc)
             loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "message": str(exc)})
         finally:
@@ -427,11 +448,25 @@ async def transcribe_file(
     threading.Thread(target=worker, daemon=True).start()
 
     async def stream():
-        while True:
-            msg = await queue.get()
-            if msg is None:
-                break
-            yield json.dumps(msg, ensure_ascii=False) + "\n"
+        try:
+            while True:
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=disconnect_poll_interval_sec)
+                except asyncio.TimeoutError:
+                    if await request.is_disconnected():
+                        abort_event.set()
+                        logger.info("Client disconnected, aborting transcription: {}", body.path)
+                        return
+                    continue
+                if msg is None:
+                    return
+                if await request.is_disconnected():
+                    abort_event.set()
+                    logger.info("Client disconnected, aborting transcription: {}", body.path)
+                    return
+                yield json.dumps(msg, ensure_ascii=False) + "\n"
+        finally:
+            abort_event.set()
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
 

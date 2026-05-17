@@ -12,6 +12,7 @@ import { formatDateTime, formatDuration } from '../../../shared/date-format';
 import { buildInitialPrompt, loadVocabularyFromFile } from '../webview/voice-log/vocabulary-store';
 import { transcriptsDir, vocabularyFile, ensureSonaraProject } from '../../../shared/project-layout';
 import { atomicWrite, openInEditor } from '../../../shared/fs-utils';
+import { TranscriptionCancelledError } from '../server/api-client';
 
 const MEDIA_FILTERS = {
     'Audio / Video': ['mp3', 'mp4', 'mkv', 'webm', 'wav', 'm4a', 'flac', 'ogg', 'mov', 'avi', 'aac', 'opus'],
@@ -75,29 +76,37 @@ export function registerTranscribeFileCommand(deps: CommandDeps): vscode.Disposa
         const outputPath = path.join(outputDir, outputFileName);
 
         try {
+            const abortController = new AbortController();
             const result = await vscode.window.withProgress(
                 {
                     location: vscode.ProgressLocation.Notification,
                     title: `Transcribing "${sourceName}"...`,
-                    cancellable: false,
+                    cancellable: true,
                 },
-                async (progress) => {
+                async (progress, token) => {
                     progress.report({ message: 'Starting...' });
+                    const cancellationSubscription = token.onCancellationRequested(() => {
+                        abortController.abort();
+                    });
 
                     let lastPercent = 0;
-                    return apiClient.transcribeFile(sourcePath, language, (p) => {
-                        if (!p.totalSec) {
-                            progress.report({ message: `Processed ${p.currentSec.toFixed(0)}s` });
-                            return;
-                        }
-                        const percent = Math.min(100, Math.round((p.currentSec / p.totalSec) * 100));
-                        const increment = Math.max(0, percent - lastPercent);
-                        lastPercent = percent;
-                        progress.report({
-                            message: `${percent}% (${formatDuration(p.currentSec, 'short')} / ${formatDuration(p.totalSec, 'short')})`,
-                            increment,
-                        });
-                    }, initialPrompt);
+                    try {
+                        return await apiClient.transcribeFile(sourcePath, language, (p) => {
+                            if (!p.totalSec) {
+                                progress.report({ message: `Processed ${p.currentSec.toFixed(0)}s` });
+                                return;
+                            }
+                            const percent = Math.min(100, Math.round((p.currentSec / p.totalSec) * 100));
+                            const increment = Math.max(0, percent - lastPercent);
+                            lastPercent = percent;
+                            progress.report({
+                                message: `${percent}% (${formatDuration(p.currentSec, 'short')} / ${formatDuration(p.totalSec, 'short')})`,
+                                increment,
+                            });
+                        }, initialPrompt, abortController.signal);
+                    } finally {
+                        cancellationSubscription.dispose();
+                    }
                 },
             );
 
@@ -122,6 +131,11 @@ export function registerTranscribeFileCommand(deps: CommandDeps): vscode.Disposa
                 await openInEditor(outputPath);
             }
         } catch (err) {
+            if (err instanceof TranscriptionCancelledError) {
+                extensionLog.appendLine(`[Transcribe] Cancelled by user: ${sourceName}`);
+                vscode.window.showInformationMessage('Transcription cancelled.');
+                return;
+            }
             const message = err instanceof Error ? err.message : String(err);
             extensionLog.appendLine(`[Transcribe] Failed: ${message}`);
             vscode.window.showErrorMessage(`Transcribe failed: ${message}`);
