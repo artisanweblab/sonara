@@ -81,6 +81,10 @@ interface MetaDto {
     priorityLabels: Record<TaskPriority, string>;
     priorityRank: Record<TaskPriority, number>;
     noStatusSectionId: string;
+    noSprintFilterValue: string;
+    noSprintFilterLabel: string;
+    noLabelsFilterValue: string;
+    noLabelsFilterLabel: string;
 }
 
 interface StateDto {
@@ -97,6 +101,10 @@ const COLLAPSED_SECTIONS_KEY = 'sonara.tasks.collapsedSections';
 const DEFAULT_COLLAPSED_SECTIONS: readonly string[] = ['backlog', 'done', 'released', 'cancelled', NO_STATUS_SECTION_ID];
 const FILTERS_KEY = 'sonara.tasks.filters';
 const DEFAULT_FILTERS: TaskFilters = { priorities: [], sprints: [], labels: [] };
+const NO_SPRINT_FILTER_VALUE = '__none__';
+const NO_SPRINT_FILTER_LABEL = 'No sprint';
+const NO_LABELS_FILTER_VALUE = '__none__';
+const NO_LABELS_FILTER_LABEL = 'No labels';
 
 export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Disposable {
     public static readonly VIEW_ID = 'sonara.tasks';
@@ -320,12 +328,24 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
         const hasS = filters.sprints.length > 0;
         const hasL = filters.labels.length > 0;
         if (!hasP && !hasS && !hasL) return tasks;
+        const sprintAcceptsNone = filters.sprints.includes(NO_SPRINT_FILTER_VALUE);
+        const labelsAcceptsNone = filters.labels.includes(NO_LABELS_FILTER_VALUE);
         return tasks.filter(t => {
             if (hasP && !filters.priorities.includes(t.priority)) return false;
-            if (hasS && (!t.sprint || !filters.sprints.includes(t.sprint))) return false;
+            if (hasS) {
+                if (t.sprint) {
+                    if (!filters.sprints.includes(t.sprint)) return false;
+                } else {
+                    if (!sprintAcceptsNone) return false;
+                }
+            }
             if (hasL) {
-                if (!t.labels || t.labels.length === 0) return false;
-                if (!t.labels.some(l => filters.labels.includes(l))) return false;
+                const isEmpty = !t.labels || t.labels.length === 0;
+                if (isEmpty) {
+                    if (!labelsAcceptsNone) return false;
+                } else {
+                    if (!t.labels.some(l => filters.labels.includes(l))) return false;
+                }
             }
             return true;
         });
@@ -359,18 +379,34 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
                 };
             });
         } else if (kind === 'sprint') {
-            allValues = this.getAvailableSprints();
+            allValues = [NO_SPRINT_FILTER_VALUE, ...this.getAvailableSprints()];
             selectedValues = current.sprints;
             title = 'Filter by Sprint';
+            const noneCount = countFor(t => !t.sprint);
             items = allValues.map(v => {
+                if (v === NO_SPRINT_FILTER_VALUE) {
+                    return {
+                        label: `${NO_SPRINT_FILTER_LABEL} (${noneCount})`,
+                        description: v,
+                        picked: selectedValues.includes(v),
+                    };
+                }
                 const count = countFor(t => t.sprint === v);
                 return { label: `${v} (${count})`, description: v, picked: selectedValues.includes(v) };
             });
         } else {
-            allValues = this.getAvailableLabels();
+            allValues = [NO_LABELS_FILTER_VALUE, ...this.getAvailableLabels()];
             selectedValues = current.labels;
             title = 'Filter by Labels';
+            const noneCount = countFor(t => !Array.isArray(t.labels) || t.labels.length === 0);
             items = allValues.map(v => {
+                if (v === NO_LABELS_FILTER_VALUE) {
+                    return {
+                        label: `${NO_LABELS_FILTER_LABEL} (${noneCount})`,
+                        description: v,
+                        picked: selectedValues.includes(v),
+                    };
+                }
                 const count = countFor(t => Array.isArray(t.labels) && t.labels.includes(v));
                 return { label: `${v} (${count})`, description: v, picked: selectedValues.includes(v) };
             });
@@ -424,8 +460,8 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
         const availableLabels = new Set(this.getAvailableLabels());
         const sanitized: TaskFilters = {
             priorities: current.priorities,
-            sprints: current.sprints.filter(v => availableSprints.has(v)),
-            labels: current.labels.filter(v => availableLabels.has(v)),
+            sprints: current.sprints.filter(v => v === NO_SPRINT_FILTER_VALUE || availableSprints.has(v)),
+            labels: current.labels.filter(v => v === NO_LABELS_FILTER_VALUE || availableLabels.has(v)),
         };
         if (sanitized.sprints.length !== current.sprints.length || sanitized.labels.length !== current.labels.length) {
             void this.memento.update(FILTERS_KEY, sanitized);
@@ -517,6 +553,10 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
                 priorityLabels: PRIORITY_LABELS,
                 priorityRank: PRIORITY_RANK,
                 noStatusSectionId: NO_STATUS_SECTION_ID,
+                noSprintFilterValue: NO_SPRINT_FILTER_VALUE,
+                noSprintFilterLabel: NO_SPRINT_FILTER_LABEL,
+                noLabelsFilterValue: NO_LABELS_FILTER_VALUE,
+                noLabelsFilterLabel: NO_LABELS_FILTER_LABEL,
             },
         };
     }

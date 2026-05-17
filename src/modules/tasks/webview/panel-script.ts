@@ -499,16 +499,20 @@ ${buildIconsScriptDecl()}
             chip.textContent = state.meta.priorityLabels[v] || v;
             return chip;
         });
+        const noSprintValue = (state.meta && state.meta.noSprintFilterValue) || '__none__';
+        const noSprintLabel = (state.meta && state.meta.noSprintFilterLabel) || 'No sprint';
+        const noLabelsValue = (state.meta && state.meta.noLabelsFilterValue) || '__none__';
+        const noLabelsLabel = (state.meta && state.meta.noLabelsFilterLabel) || 'No labels';
         renderFilterGroup('sprint', f.sprints || [], 'sprint', function (v) {
             const chip = document.createElement('span');
             chip.className = 'chip chip-sprint';
-            chip.textContent = v;
+            chip.textContent = v === noSprintValue ? noSprintLabel : v;
             return chip;
         });
         renderFilterGroup('label', f.labels || [], 'labels', function (v) {
             const chip = document.createElement('span');
             chip.className = 'chip chip-label';
-            chip.textContent = v;
+            chip.textContent = v === noLabelsValue ? noLabelsLabel : v;
             return chip;
         });
 
@@ -595,16 +599,30 @@ ${buildIconsScriptDecl()}
         const hasP = (f.priorities || []).length > 0;
         const hasS = (f.sprints || []).length > 0;
         const hasL = (f.labels || []).length > 0;
+        const noSprintValue = (state.meta && state.meta.noSprintFilterValue) || '__none__';
+        const noLabelsValue = (state.meta && state.meta.noLabelsFilterValue) || '__none__';
+        const sprintAcceptsNone = hasS && f.sprints.indexOf(noSprintValue) !== -1;
+        const labelsAcceptsNone = hasL && f.labels.indexOf(noLabelsValue) !== -1;
         return tasks.filter(function (t) {
             if (hasP && f.priorities.indexOf(t.priority) === -1) return false;
-            if (hasS && (!t.sprint || f.sprints.indexOf(t.sprint) === -1)) return false;
-            if (hasL) {
-                if (!t.labels || t.labels.length === 0) return false;
-                let match = false;
-                for (const l of t.labels) {
-                    if (f.labels.indexOf(l) !== -1) { match = true; break; }
+            if (hasS) {
+                if (t.sprint) {
+                    if (f.sprints.indexOf(t.sprint) === -1) return false;
+                } else {
+                    if (!sprintAcceptsNone) return false;
                 }
-                if (!match) return false;
+            }
+            if (hasL) {
+                const isEmpty = !t.labels || t.labels.length === 0;
+                if (isEmpty) {
+                    if (!labelsAcceptsNone) return false;
+                } else {
+                    let match = false;
+                    for (const l of t.labels) {
+                        if (f.labels.indexOf(l) !== -1) { match = true; break; }
+                    }
+                    if (!match) return false;
+                }
             }
             if (q) {
                 if (!((t.title || '').toLowerCase().includes(q)
