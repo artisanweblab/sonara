@@ -17,6 +17,12 @@ export interface RecordingResult {
     durationSec: number;
 }
 
+export interface AudioInputDevice {
+    id: string;
+    label: string;
+    isDefault: boolean;
+}
+
 /**
  * Records audio via parecord (PipeWire/PulseAudio) or arecord (ALSA fallback).
  * Writes a temp WAV file, reads it on stop, then deletes it.
@@ -45,7 +51,8 @@ export class AudioRecorder implements vscode.Disposable {
         );
 
         const recorder = await this.findRecorder();
-        const args = this.buildArgs(recorder, this.tempFile);
+        const deviceId = this.getConfiguredDeviceId();
+        const args = this.buildArgs(recorder, this.tempFile, deviceId);
 
         this.process = cp.spawn(recorder, args, {
             stdio: ['ignore', 'ignore', 'pipe'],
@@ -111,7 +118,8 @@ export class AudioRecorder implements vscode.Disposable {
         this.tempFile = null;
 
         const recorder = await this.findRecorder();
-        const args = this.buildStreamingArgs(recorder);
+        const deviceId = this.getConfiguredDeviceId();
+        const args = this.buildStreamingArgs(recorder, deviceId);
 
         this.process = cp.spawn(recorder, args, {
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -159,23 +167,31 @@ export class AudioRecorder implements vscode.Disposable {
         return { durationSec };
     }
 
-    private buildStreamingArgs(recorder: string): string[] {
+    private buildStreamingArgs(recorder: string, deviceId: string | null): string[] {
         if (recorder === 'parecord') {
-            return [
+            const args = [
                 '--format=s16le',
                 '--rate=16000',
                 '--channels=1',
                 '--raw',
             ];
+            if (deviceId) {
+                args.push(`--device=${deviceId}`);
+            }
+            return args;
         }
         // arecord (ALSA)
-        return [
+        const args = [
             '-f', 'S16_LE',
             '-r', '16000',
             '-c', '1',
             '-t', 'raw',
-            '-',
         ];
+        if (deviceId) {
+            args.push('-D', deviceId);
+        }
+        args.push('-');
+        return args;
     }
 
     async cancel(): Promise<void> {
@@ -229,23 +245,74 @@ export class AudioRecorder implements vscode.Disposable {
         );
     }
 
-    private buildArgs(recorder: string, outputFile: string): string[] {
+    private buildArgs(recorder: string, outputFile: string, deviceId: string | null): string[] {
         if (recorder === 'parecord') {
-            return [
+            const args = [
                 '--format=s16le',
                 '--rate=16000',
                 '--channels=1',
                 '--file-format=wav',
-                outputFile,
             ];
+            if (deviceId) {
+                args.push(`--device=${deviceId}`);
+            }
+            args.push(outputFile);
+            return args;
         }
         // arecord (ALSA)
-        return [
+        const args = [
             '-f', 'S16_LE',
             '-r', '16000',
             '-c', '1',
-            outputFile,
         ];
+        if (deviceId) {
+            args.push('-D', deviceId);
+        }
+        args.push(outputFile);
+        return args;
+    }
+
+    private getConfiguredDeviceId(): string | null {
+        const value = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION).get<string | null>('audioInput', null);
+        if (!value || typeof value !== 'string') {
+            return null;
+        }
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : null;
+    }
+
+    async listInputDevices(): Promise<AudioInputDevice[]> {
+        if (!(await commandExists('pactl'))) {
+            return [];
+        }
+        const [defaultName, listOutput] = await Promise.all([
+            execCapture('pactl get-default-source').then(out => out.trim()).catch(() => ''),
+            execCapture('pactl list sources').catch(() => ''),
+        ]);
+        if (!listOutput) {
+            return [];
+        }
+
+        const devices: AudioInputDevice[] = [];
+        const blocks = listOutput.split(/\n(?=Source #)/);
+        for (const block of blocks) {
+            const nameMatch = block.match(/^\s*Name:\s*(.+)$/m);
+            if (!nameMatch) {
+                continue;
+            }
+            const name = nameMatch[1].trim();
+            // .monitor sources are loopback (system audio) - separate feature, hide for now.
+            if (name.endsWith('.monitor')) {
+                continue;
+            }
+            const descMatch = block.match(/^\s*Description:\s*(.+)$/m);
+            devices.push({
+                id: name,
+                label: descMatch ? descMatch[1].trim() : name,
+                isDefault: name === defaultName,
+            });
+        }
+        return devices;
     }
 
     private cleanup(): void {
@@ -267,4 +334,16 @@ export class AudioRecorder implements vscode.Disposable {
         this.cleanup();
         this.onStateChangedEmitter.dispose();
     }
+}
+
+function execCapture(command: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+        cp.exec(command, { maxBuffer: 5 * 1024 * 1024 }, (err, stdout) => {
+            if (err) {
+                reject(err);
+                return;
+            }
+            resolve(stdout);
+        });
+    });
 }

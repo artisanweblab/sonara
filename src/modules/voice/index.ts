@@ -13,6 +13,7 @@ import { CommandDeps } from './commands/types';
 import { registerRecordingCommands } from './commands/recording-commands';
 import { registerLogCommands } from './commands/log-commands';
 import { registerModelCommands } from './commands/model-commands';
+import { registerAudioInputCommands } from './commands/audio-input-commands';
 import { registerServerCommands } from './commands/server-commands';
 import { registerTranscribeFileCommand } from './commands/transcribe-file-command';
 import { registerVocabularyCommands } from './commands/vocabulary-commands';
@@ -131,6 +132,7 @@ export async function registerVoiceModule(
     statusBar.attachTranscribingState(transcribingState);
     registerLogCommands(deps);
     registerModelCommands(deps);
+    registerAudioInputCommands(deps);
     registerServerCommands(deps);
     registerVocabularyCommands(deps);
 

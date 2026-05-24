@@ -92,6 +92,11 @@
         "category": "Sonara"
       },
       {
+        "command": "sonara.voice.changeAudioInput",
+        "title": "Change Audio Input",
+        "category": "Sonara"
+      },
+      {
         "command": "sonara.voice.restartServer",
         "title": "Restart Server",
         "category": "Sonara"
@@ -336,6 +341,11 @@
           "type": "boolean",
           "default": true,
           "description": "Enable voice activity detection filter"
+        },
+        "sonara.voice.audioInput": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Audio input device for recording. Null = system default. Use 'Sonara: Change Audio Input' to pick from available devices."
         },
         "sonara.voice.stopDelayMs": {
           "type": "number",
