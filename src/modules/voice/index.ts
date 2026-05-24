@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { ServerManager } from './server/server-manager';
 import { SetupWizard } from './server/setup-wizard';
 import { AudioRecorder } from './audio/audio-recorder';
+import { createRecorderBackend } from './audio/backends';
 import { ApiClient } from './server/api-client';
 import { LogStore } from './webview/voice-log/log-store';
 import { VoiceLogPanel } from './webview/voice-log/panel';
@@ -77,7 +78,7 @@ export async function registerVoiceModule(
     const initialLogStore = currentLogStore();
     const initialTranscriptsDir = initialFolder ? transcriptsDir(initialFolder) : null;
 
-    const recorder = new AudioRecorder();
+    const recorder = new AudioRecorder(createRecorderBackend(context));
     context.subscriptions.push(recorder);
 
     const voiceLogPanel = new VoiceLogPanel(initialLogStore, context.extensionUri, activeProject, logStoreFor);
