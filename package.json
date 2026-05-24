@@ -1,9 +1,10 @@
 {
   "name": "sonara",
   "displayName": "Sonara",
-  "description": "Project tasks as markdown and local voice input. Two modules in one plugin.",
+  "description": "Your assistant for working with AI agents - capture tasks and voice notes as markdown, right in your project.",
   "version": "0.1.0",
   "publisher": "artisanweblab",
+  "icon": "media/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/artisanweblab/sonara"
