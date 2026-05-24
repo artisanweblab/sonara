@@ -281,6 +281,33 @@ export class AudioRecorder implements vscode.Disposable {
         return trimmed.length > 0 ? trimmed : null;
     }
 
+    async isConfiguredSourceMuted(): Promise<boolean | null> {
+        if (!(await commandExists('pactl'))) {
+            return null;
+        }
+        let source: string | null = this.getConfiguredDeviceId();
+        if (!source) {
+            try {
+                source = (await execCapture('pactl get-default-source')).trim();
+            } catch {
+                return null;
+            }
+        }
+        if (!source || !/^[A-Za-z0-9._:-]+$/.test(source)) {
+            return null;
+        }
+        try {
+            const out = await execCapture(`pactl get-source-mute ${source}`);
+            const match = out.match(/Mute:\s*(yes|no)/i);
+            if (!match) {
+                return null;
+            }
+            return match[1].toLowerCase() === 'yes';
+        } catch {
+            return null;
+        }
+    }
+
     async listInputDevices(): Promise<AudioInputDevice[]> {
         if (!(await commandExists('pactl'))) {
             return [];

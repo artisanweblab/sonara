@@ -390,7 +390,9 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
         clearDraft();
 
         if (!transcribeResult.text.trim()) {
-            vscode.window.showInformationMessage('No speech detected.');
+            vscode.window.showWarningMessage(
+                'Recorded only silence. Check that your microphone is on, not muted, and selected as the active input.'
+            );
             return;
         }
 
@@ -505,6 +507,18 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
         } else {
             await finalizeAdaptiveAsClassic();
         }
+    }
+
+    function warnIfMicrophoneMuted(): void {
+        recorder.isConfiguredSourceMuted().then(muted => {
+            if (muted === true) {
+                vscode.window.showWarningMessage(
+                    'Microphone appears to be muted in the system. Check the mute button on your mic - the LED might be red.'
+                );
+            }
+        }).catch(() => {
+            // mute probe failed - silently skip, post-record silence check still covers this case
+        });
     }
 
     function clearAdaptiveTimer(): void {
@@ -639,6 +653,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
                     publishDraft('recording', '', '');
                     await recorder.start();
                 }
+                warnIfMicrophoneMuted();
             } catch (err) {
                 await vscode.commands.executeCommand('setContext', 'sonara.voice.isRecording', false);
                 streamingSession?.cancel();
@@ -715,7 +730,9 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             clearDraft();
 
             if (!transcribeResult.text.trim()) {
-                vscode.window.showInformationMessage('No speech detected.');
+                vscode.window.showWarningMessage(
+                    'Recorded only silence. Check that your microphone is on, not muted, and selected as the active input.'
+                );
                 return;
             }
 
