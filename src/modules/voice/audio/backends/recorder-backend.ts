@@ -31,4 +31,12 @@ export interface RecorderBackend {
 
     /** true=muted, false=not muted, null=unknown (backend cannot determine). */
     isSourceMuted(deviceId: string | null): Promise<boolean | null>;
+
+    /**
+     * Ask the recorder process to finalize its output (flush buffers, close
+     * WAV header) and exit. AudioRecorder calls this instead of a hard kill so
+     * the resulting file is playable. Backend picks the right mechanism for
+     * the underlying tool (POSIX signal, stdin command, etc.).
+     */
+    gracefulStop(process: cp.ChildProcess): void;
 }

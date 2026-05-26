@@ -6,6 +6,7 @@ import { LogStore } from '../webview/voice-log/log-store';
 import { VoiceLogPanel } from '../webview/voice-log/panel';
 import { TranscriptStore } from '../webview/voice-transcripts/transcript-store';
 import { ActiveProject } from '../../../shared/active-project';
+import { FfmpegInstaller } from '../audio/backends';
 
 export interface CommandDeps {
     readonly extensionContext: vscode.ExtensionContext;
@@ -19,4 +20,6 @@ export interface CommandDeps {
     readonly activeProject: ActiveProject;
     readonly logStoreFor: (folder: vscode.WorkspaceFolder) => LogStore;
     readonly getTranscriptStore: () => TranscriptStore;
+    /** Present only on platforms that use a self-installed ffmpeg (Windows). */
+    readonly ffmpegInstaller?: FfmpegInstaller;
 }

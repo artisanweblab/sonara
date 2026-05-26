@@ -15,6 +15,7 @@ import { registerRecordingCommands } from './commands/recording-commands';
 import { registerLogCommands } from './commands/log-commands';
 import { registerModelCommands } from './commands/model-commands';
 import { registerAudioInputCommands } from './commands/audio-input-commands';
+import { registerFfmpegCommands } from './commands/ffmpeg-commands';
 import { registerServerCommands } from './commands/server-commands';
 import { registerTranscribeFileCommand } from './commands/transcribe-file-command';
 import { registerVocabularyCommands } from './commands/vocabulary-commands';
@@ -78,7 +79,8 @@ export async function registerVoiceModule(
     const initialLogStore = currentLogStore();
     const initialTranscriptsDir = initialFolder ? transcriptsDir(initialFolder) : null;
 
-    const recorder = new AudioRecorder(createRecorderBackend(context));
+    const { backend: recorderBackend, ffmpegInstaller } = createRecorderBackend(context);
+    const recorder = new AudioRecorder(recorderBackend);
     context.subscriptions.push(recorder);
 
     const voiceLogPanel = new VoiceLogPanel(initialLogStore, context.extensionUri, activeProject, logStoreFor);
@@ -127,6 +129,7 @@ export async function registerVoiceModule(
         activeProject,
         logStoreFor,
         getTranscriptStore: () => voiceTranscriptsPanel.getCurrentStore(),
+        ffmpegInstaller,
     };
 
     const transcribingState = registerRecordingCommands(deps);
@@ -134,6 +137,7 @@ export async function registerVoiceModule(
     registerLogCommands(deps);
     registerModelCommands(deps);
     registerAudioInputCommands(deps);
+    registerFfmpegCommands(deps);
     registerServerCommands(deps);
     registerVocabularyCommands(deps);
 

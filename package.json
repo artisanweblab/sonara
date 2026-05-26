@@ -117,6 +117,11 @@
         "category": "Sonara"
       },
       {
+        "command": "sonara.voice.reinstallFfmpeg",
+        "title": "Reinstall ffmpeg (Windows)",
+        "category": "Sonara"
+      },
+      {
         "command": "sonara.voice.transcribeFile",
         "title": "Transcribe File...",
         "category": "Sonara",

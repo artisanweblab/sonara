@@ -198,8 +198,7 @@ export class AudioRecorder implements vscode.Disposable {
                 resolve();
             });
 
-            // SIGINT lets recorders finalize the WAV header / flush buffers properly
-            this.process.kill('SIGINT');
+            this.backend.gracefulStop(this.process);
         });
     }
 

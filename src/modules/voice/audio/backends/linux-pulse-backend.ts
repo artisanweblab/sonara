@@ -74,6 +74,10 @@ export class LinuxPulseBackend implements RecorderBackend {
         return devices;
     }
 
+    gracefulStop(process: cp.ChildProcess): void {
+        process.kill('SIGINT');
+    }
+
     async isSourceMuted(deviceId: string | null): Promise<boolean | null> {
         if (!(await commandExists('pactl'))) {
             return null;
