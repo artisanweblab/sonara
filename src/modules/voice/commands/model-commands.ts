@@ -5,7 +5,6 @@ import * as vscode from 'vscode';
 import { CommandDeps } from './types';
 import {
     WHISPER_MODELS,
-    LANGUAGE_OPTIONS,
     GLOBAL_STATE_KEYS,
     MODEL_DESCRIPTIONS,
     VOICE_CONFIG_SECTION,
@@ -14,6 +13,7 @@ import {
     type SetupMode,
     type DeviceOption,
 } from '../constants';
+import { buildLanguageQuickPickItems } from '../language-picker';
 import { ApiClient } from '../server/api-client';
 import { modelsDir as serverModelsDir } from '../../../shared/server-runtime';
 
@@ -107,16 +107,13 @@ export function registerModelCommands(deps: CommandDeps): void {
             const currentLanguage = config.get<string>('language', VOICE_DEFAULTS.language);
 
             const picked = await vscode.window.showQuickPick(
-                LANGUAGE_OPTIONS.map(lang => ({
-                    label: lang,
-                    description: lang === currentLanguage ? '(current)' : '',
-                })),
+                buildLanguageQuickPickItems(currentLanguage, '(current)'),
                 { placeHolder: 'Select transcription language' },
             );
-            if (!picked) {
+            if (!picked || !picked.value) {
                 return;
             }
-            await config.update('language', picked.label, vscode.ConfigurationTarget.Global);
+            await config.update('language', picked.value, vscode.ConfigurationTarget.Global);
         }),
 
         vscode.commands.registerCommand('sonara.voice.changeDevice', async () => {

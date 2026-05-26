@@ -2,7 +2,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import { CommandDeps } from './types';
-import { VOICE_CONFIG_SECTION, VOICE_DEFAULTS } from '../constants';
+import { LANGUAGE_LABELS, VOICE_CONFIG_SECTION, VOICE_DEFAULTS } from '../constants';
+import { buildLanguageQuickPickItems } from '../language-picker';
 import {
     formatTimestampForFileName,
     formatTranscriptMarkdown,
@@ -66,8 +67,20 @@ export function registerTranscribeFileCommand(deps: CommandDeps): vscode.Disposa
 
         const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
         const configuredLanguage = config.get<string>('language', VOICE_DEFAULTS.language);
-        const language = configuredLanguage === 'auto' ? null : configuredLanguage;
         const model = config.get<string>('model', VOICE_DEFAULTS.model);
+
+        const languagePick = await vscode.window.showQuickPick(
+            buildLanguageQuickPickItems(configuredLanguage, '(default)'),
+            {
+                placeHolder: `Language for "${sourceName}" (default: ${LANGUAGE_LABELS[configuredLanguage] ?? configuredLanguage})`,
+                title: 'Select transcription language for this file',
+            },
+        );
+        if (!languagePick || !languagePick.value) {
+            return;
+        }
+        const selectedLanguage = languagePick.value;
+        const language = selectedLanguage === 'auto' ? null : selectedLanguage;
 
         const now = new Date();
         const timestamp = formatTimestampForFileName(now);
