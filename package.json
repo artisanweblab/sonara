@@ -411,17 +411,6 @@
           "maximum": 10,
           "description": "Beam size for Whisper decoding"
         },
-        "sonara.voice.log.maxRecords": {
-          "type": "number",
-          "default": 1000,
-          "description": "Maximum records per project log"
-        },
-        "sonara.voice.log.onLimitExceeded": {
-          "type": "string",
-          "default": "delete-oldest",
-          "enum": ["delete-oldest", "archive", "ask"],
-          "description": "What to do when log limit is exceeded"
-        },
         "sonara.voice.log.autoOpenPanel": {
           "type": "boolean",
           "default": false,

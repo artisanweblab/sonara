@@ -61,7 +61,6 @@ export class LogStore implements vscode.Disposable {
                 this.cachedRecords = [record, ...this.cachedRecords];
             }
             this.onRecordAddedEmitter.fire(record);
-            await this.enforceLimitInner();
         });
         this.writeChain = op.catch(() => undefined);
         return op;
@@ -174,34 +173,6 @@ export class LogStore implements vscode.Disposable {
     // populated (status bar will refresh on the next record event).
     get recordCount(): number {
         return this.cachedRecords?.length ?? 0;
-    }
-
-    // Must only be called from within a writeChain callback (already serialized).
-    private async enforceLimitInner(): Promise<void> {
-        const config = vscode.workspace.getConfiguration('sonara.voice.log');
-        const maxRecords = config.get<number>('maxRecords', 1000);
-        const strategy = config.get<string>('onLimitExceeded', 'delete-oldest');
-
-        const records = await this.list(); // newest-first
-        if (records.length <= maxRecords) {
-            return;
-        }
-
-        let toKeep: VoiceRecord[];
-        if (strategy === 'delete-oldest') {
-            toKeep = records.slice(0, maxRecords);
-        } else {
-            return;
-        }
-
-        const keptIdSet = new Set(toKeep.map(r => r.id));
-        const removedRecords = records.filter(r => !keptIdSet.has(r.id));
-
-        await this.writeAll(toKeep.slice().reverse()); // write oldest-first
-
-        for (const removed of removedRecords) {
-            this.onRecordDeletedEmitter.fire(removed.id);
-        }
     }
 
     private async writeAll(records: VoiceRecord[]): Promise<void> {

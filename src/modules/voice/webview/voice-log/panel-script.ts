@@ -257,7 +257,8 @@ ${buildIconsScriptDecl()}
             return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
         });
 
-        const visible = showAll ? sorted : sorted.slice(0, 1);
+        const SHOW_ALL_LIMIT = 100;
+        const visible = showAll ? sorted.slice(0, SHOW_ALL_LIMIT) : sorted.slice(0, 1);
         visible.forEach(r => list.appendChild(buildCard(r)));
 
         updateDraftCard();
