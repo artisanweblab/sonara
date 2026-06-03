@@ -54,7 +54,6 @@ export class TimerService implements vscode.Disposable {
         this.context.subscriptions.push(this.tick);
         this.context.subscriptions.push(
             this.activeProject.onDidChange(async () => {
-                await this.flush();
                 await this.stopInternal(false);
                 this.dayStore = undefined;
             }),
@@ -96,9 +95,6 @@ export class TimerService implements vscode.Disposable {
             ? { slug, projectId }
             : slug;
         await this.context.workspaceState.update(ACTIVE_SLUG_STATE, storedValue);
-
-        await dayStore.recomputeTotalsAllDays(userKey, slug);
-        await dayStore.flush();
 
         if (!this.tick.isRunning()) {
             this.tick.start();
@@ -171,14 +167,9 @@ export class TimerService implements vscode.Disposable {
         this.tick.stop();
         if (slug) {
             const userKey = this.identity.get();
-            const dayStore = this.requireDayStore();
-            if (userKey && dayStore) {
-                await dayStore.recomputeTotalsAllDays(userKey, slug);
-                await dayStore.flush();
-                if (emit) {
-                    const total = await this.sumTotal(userKey, slug);
-                    this._onChange.fire({ activeSlug: null, slug, total });
-                }
+            if (userKey && emit) {
+                const total = await this.sumTotal(userKey, slug);
+                this._onChange.fire({ activeSlug: null, slug, total });
             }
         }
     }
