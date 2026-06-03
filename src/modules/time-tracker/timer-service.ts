@@ -11,6 +11,16 @@ export type TaskExistsCheck = (slug: string) => boolean;
 
 const ACTIVE_SLUG_STATE = 'sonara.timeTracker.activeSlug';
 
+interface StoredActiveSlug {
+    slug: string;
+    projectId: string;
+}
+
+export interface StoredSlugResult {
+    slug: string;
+    projectId: string | null;
+}
+
 export interface TimerStateChange {
     activeSlug: string | null;
     slug: string;
@@ -20,6 +30,7 @@ export interface TimerStateChange {
 export class TimerService implements vscode.Disposable {
     private dayStore: DayStore | undefined;
     private readonly tick: TickService;
+    private readonly tickIntervalSec: number;
     private activeSlug: string | null = null;
     private readonly _onChange = new vscode.EventEmitter<TimerStateChange>();
     public readonly onChange = this._onChange.event;
@@ -33,6 +44,7 @@ export class TimerService implements vscode.Disposable {
         tickIntervalSec: number,
         flushIntervalSec: number,
     ) {
+        this.tickIntervalSec = tickIntervalSec;
         this.tick = new TickService(
             tickIntervalSec,
             flushIntervalSec,
@@ -41,7 +53,9 @@ export class TimerService implements vscode.Disposable {
         );
         this.context.subscriptions.push(this.tick);
         this.context.subscriptions.push(
-            this.activeProject.onDidChange(() => {
+            this.activeProject.onDidChange(async () => {
+                await this.flush();
+                await this.stopInternal(false);
                 this.dayStore = undefined;
             }),
         );
@@ -51,8 +65,18 @@ export class TimerService implements vscode.Disposable {
         return this.activeSlug;
     }
 
-    public getStoredActiveSlug(): string | null {
-        return this.context.workspaceState.get<string>(ACTIVE_SLUG_STATE) ?? null;
+    public getStoredActiveSlug(): StoredSlugResult | null {
+        const raw = this.context.workspaceState.get<string | StoredActiveSlug>(ACTIVE_SLUG_STATE);
+        if (!raw) return null;
+        // Backward-compat: old format stored a plain string without projectId.
+        if (typeof raw === 'string') {
+            return { slug: raw, projectId: null };
+        }
+        return { slug: raw.slug, projectId: raw.projectId };
+    }
+
+    private currentProjectId(): string | null {
+        return this.activeProject.get()?.uri.toString() ?? null;
     }
 
     public async start(slug: string): Promise<void> {
@@ -67,7 +91,11 @@ export class TimerService implements vscode.Disposable {
 
         this.activeSlug = slug;
         this.taskMissingNotified = false;
-        await this.context.workspaceState.update(ACTIVE_SLUG_STATE, slug);
+        const projectId = this.currentProjectId();
+        const storedValue: StoredActiveSlug | string = projectId
+            ? { slug, projectId }
+            : slug;
+        await this.context.workspaceState.update(ACTIVE_SLUG_STATE, storedValue);
 
         const today = localDateKey(new Date());
         await dayStore.recomputeTotal(userKey, today, slug);
@@ -95,7 +123,7 @@ export class TimerService implements vscode.Disposable {
     public async continueFromState(): Promise<void> {
         const stored = this.getStoredActiveSlug();
         if (!stored) return;
-        await this.start(stored);
+        await this.start(stored.slug);
     }
 
     public async clearStoredActive(): Promise<void> {
@@ -170,7 +198,7 @@ export class TimerService implements vscode.Disposable {
         if (!userKey || !dayStore) return;
         const dateKey = localDateKey(tickAt);
         const iso = slotStartIso(tickAt);
-        await dayStore.addTick(userKey, dateKey, slug, iso, 15);
+        await dayStore.addTick(userKey, dateKey, slug, iso, this.tickIntervalSec);
         await dayStore.flush();
         const total = await this.sumTotal(userKey, slug);
         this._onChange.fire({ activeSlug: slug, slug, total });

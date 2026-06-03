@@ -326,6 +326,13 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             adaptiveIntervalSec,
             wsInitialPrompt,
         );
+
+        if (!adaptiveActive) {
+            extensionLog.appendLine('[Adaptive] aborted after WS open (adaptive flow ended during openTranscribeStream)');
+            session.cancel();
+            return;
+        }
+
         extensionLog.appendLine('[Adaptive] WebSocket opened');
 
         attachStreamingPartials(session, headText);
@@ -439,6 +446,14 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             throw err;
         }
 
+        // If cancelStreamingFlow ran while stopStreaming was awaited it already
+        // cancelled the session and nulled streamingSession - abort without saving.
+        if (streamingSession === null) {
+            extensionLog.appendLine('[Streaming] finalize aborted: session was cancelled during stopStreaming');
+            clearDraft();
+            return;
+        }
+
         streamingFinalizing = true;
         publishTranscribingDraft(stopResult.durationSec, streamingFinalText);
 
@@ -455,6 +470,13 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             extensionLog.appendLine(`[Streaming] finalize error: ${err}`);
         } finally {
             setTranscribing(false);
+        }
+
+        // Check again: cancelStreamingFlow may have run during session.finalize().
+        if (streamingSession === null) {
+            extensionLog.appendLine('[Streaming] finalize aborted: session was cancelled during finalize');
+            clearDraft();
+            return;
         }
 
         streamingSession = null;
@@ -540,7 +562,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             streamingSession.cancel();
             streamingSession = null;
         }
-        if (recorder.state === 'recording' || recorder.state === 'finishing') {
+        if (recorder.state === 'starting' || recorder.state === 'recording' || recorder.state === 'finishing') {
             try {
                 await recorder.cancel();
             } catch {
@@ -611,7 +633,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
 
         vscode.commands.registerCommand('sonara.voice.cancelRecording', async () => {
             await vscode.commands.executeCommand('setContext', 'sonara.voice.isRecording', false);
-            if (recorder.state !== 'recording' && recorder.state !== 'finishing') {
+            if (recorder.state !== 'starting' && recorder.state !== 'recording' && recorder.state !== 'finishing') {
                 return;
             }
             if (streamingSession || adaptiveActive) {
@@ -633,6 +655,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
                 return;
             }
             if (recorder.state !== 'idle') {
+                // 'starting' also blocks re-entry: the recorder is already initialising
                 return;
             }
             if (!activeProject.get()) {

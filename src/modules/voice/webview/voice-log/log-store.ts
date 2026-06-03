@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { atomicWrite } from '../../../../shared/fs-utils';
 import { VoiceRecord } from './types';
 
 export type DraftMode = 'recording' | 'live' | 'transcribing';
@@ -27,6 +28,7 @@ export class LogStore implements vscode.Disposable {
 
     private fileWatcher: fs.FSWatcher | null = null;
     private draft: DraftRecord | null = null;
+    private writeChain: Promise<void> = Promise.resolve();
 
     constructor(public readonly logPath: string | null) {}
 
@@ -40,14 +42,18 @@ export class LogStore implements vscode.Disposable {
     }
 
     async add(record: VoiceRecord): Promise<void> {
-        if (!this.logPath) {
-            return;
-        }
-        fs.mkdirSync(path.dirname(this.logPath), { recursive: true });
-        const line = JSON.stringify(record) + '\n';
-        fs.appendFileSync(this.logPath, line, { encoding: 'utf8', flag: 'a' });
-        this.onRecordAddedEmitter.fire(record);
-        await this.enforceLimit();
+        const op = this.writeChain.then(async () => {
+            if (!this.logPath) {
+                return;
+            }
+            fs.mkdirSync(path.dirname(this.logPath), { recursive: true });
+            const line = JSON.stringify(record) + '\n';
+            fs.appendFileSync(this.logPath, line, { encoding: 'utf8', flag: 'a' });
+            this.onRecordAddedEmitter.fire(record);
+            await this.enforceLimitInner();
+        });
+        this.writeChain = op.catch(() => undefined);
+        return op;
     }
 
     async get(id: string): Promise<VoiceRecord | null> {
@@ -56,21 +62,29 @@ export class LogStore implements vscode.Disposable {
     }
 
     async update(id: string, updates: Partial<VoiceRecord>): Promise<void> {
-        const records = await this.list();
-        const index = records.findIndex(r => r.id === id);
-        if (index === -1) {
-            throw new Error(`Record not found: ${id}`);
-        }
-        records[index] = { ...records[index], ...updates };
-        await this.writeAll(records.slice().reverse());
-        this.onRecordUpdatedEmitter.fire(records[index]);
+        const op = this.writeChain.then(async () => {
+            const records = await this.list();
+            const index = records.findIndex(r => r.id === id);
+            if (index === -1) {
+                throw new Error(`Record not found: ${id}`);
+            }
+            records[index] = { ...records[index], ...updates };
+            await this.writeAll(records.slice().reverse());
+            this.onRecordUpdatedEmitter.fire(records[index]);
+        });
+        this.writeChain = op.catch(() => undefined);
+        return op;
     }
 
     async delete(id: string): Promise<void> {
-        const records = await this.list();
-        const filtered = records.filter(r => r.id !== id);
-        await this.writeAll(filtered.slice().reverse());
-        this.onRecordDeletedEmitter.fire(id);
+        const op = this.writeChain.then(async () => {
+            const records = await this.list();
+            const filtered = records.filter(r => r.id !== id);
+            await this.writeAll(filtered.slice().reverse());
+            this.onRecordDeletedEmitter.fire(id);
+        });
+        this.writeChain = op.catch(() => undefined);
+        return op;
     }
 
     async list(): Promise<VoiceRecord[]> {
@@ -104,14 +118,18 @@ export class LogStore implements vscode.Disposable {
     }
 
     async clear(): Promise<void> {
-        if (!this.logPath || !fs.existsSync(this.logPath)) {
-            return;
-        }
-        const existing = await this.list();
-        fs.writeFileSync(this.logPath, '', 'utf8');
-        for (const record of existing) {
-            this.onRecordDeletedEmitter.fire(record.id);
-        }
+        const op = this.writeChain.then(async () => {
+            if (!this.logPath || !fs.existsSync(this.logPath)) {
+                return;
+            }
+            const existing = await this.list();
+            await atomicWrite(this.logPath, '');
+            for (const record of existing) {
+                this.onRecordDeletedEmitter.fire(record.id);
+            }
+        });
+        this.writeChain = op.catch(() => undefined);
+        return op;
     }
 
     get recordCount(): number {
@@ -122,7 +140,8 @@ export class LogStore implements vscode.Disposable {
         return content.split('\n').filter(l => l.trim()).length;
     }
 
-    private async enforceLimit(): Promise<void> {
+    // Must only be called from within a writeChain callback (already serialized).
+    private async enforceLimitInner(): Promise<void> {
         const config = vscode.workspace.getConfiguration('sonara.voice.log');
         const maxRecords = config.get<number>('maxRecords', 1000);
         const strategy = config.get<string>('onLimitExceeded', 'delete-oldest');
@@ -155,7 +174,7 @@ export class LogStore implements vscode.Disposable {
         }
         // records should be in append order (oldest first)
         const content = records.map(r => JSON.stringify(r)).join('\n') + (records.length ? '\n' : '');
-        fs.writeFileSync(this.logPath, content, 'utf8');
+        await atomicWrite(this.logPath, content);
     }
 
     dispose(): void {

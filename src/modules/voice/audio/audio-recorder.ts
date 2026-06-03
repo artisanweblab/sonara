@@ -8,7 +8,7 @@ import * as vscode from 'vscode';
 import { VOICE_CONFIG_SECTION } from '../constants';
 import { AudioInputDevice, RecorderBackend } from './backends';
 
-export type RecorderState = 'idle' | 'recording' | 'finishing' | 'processing';
+export type RecorderState = 'idle' | 'starting' | 'recording' | 'finishing' | 'processing';
 export { AudioInputDevice } from './backends';
 
 const DEFAULT_STOP_DELAY_MS = 1000;
@@ -38,16 +38,31 @@ export class AudioRecorder implements vscode.Disposable {
     }
 
     async start(): Promise<void> {
-        if (this._state !== 'idle') {
+        const currentState = this._state;
+        if (currentState !== 'idle') {
             return;
         }
+
+        this.setState('starting');
 
         this.tempFile = path.join(
             os.tmpdir(),
             `ptt_${crypto.randomBytes(8).toString('hex')}.wav`
         );
 
-        await this.backend.ensureReady();
+        try {
+            await this.backend.ensureReady();
+        } catch (err) {
+            this.cleanup();
+            throw err;
+        }
+
+        // A cancel() call during ensureReady() would have already cleaned up and
+        // set state back to 'idle' - detect that and bail out silently.
+        if (this._state !== 'starting') {
+            return;
+        }
+
         const deviceId = this.getConfiguredDeviceId();
         this.process = this.backend.spawnWavToFile(this.tempFile, deviceId);
 
@@ -103,13 +118,27 @@ export class AudioRecorder implements vscode.Disposable {
     }
 
     async startStreaming(onPcm: (chunk: Buffer) => void): Promise<void> {
-        if (this._state !== 'idle') {
+        const currentState = this._state;
+        if (currentState !== 'idle') {
             return;
         }
 
+        this.setState('starting');
         this.tempFile = null;
 
-        await this.backend.ensureReady();
+        try {
+            await this.backend.ensureReady();
+        } catch (err) {
+            this.cleanup();
+            throw err;
+        }
+
+        // A cancel() call during ensureReady() would have already cleaned up and
+        // set state back to 'idle' - detect that and bail out silently.
+        if (this._state !== 'starting') {
+            return;
+        }
+
         const deviceId = this.getConfiguredDeviceId();
         this.process = this.backend.spawnPcmStream(deviceId);
 
@@ -156,7 +185,7 @@ export class AudioRecorder implements vscode.Disposable {
     }
 
     async cancel(): Promise<void> {
-        if (this._state !== 'recording' && this._state !== 'finishing') {
+        if (this._state !== 'starting' && this._state !== 'recording' && this._state !== 'finishing') {
             return;
         }
         const tempFile = this.tempFile;

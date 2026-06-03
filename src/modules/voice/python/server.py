@@ -114,18 +114,23 @@ class WhisperModel:
 
         resolved_device, resolved_compute = self._resolve_device_compute(device, compute_type)
 
-        self._model = FasterWhisperModel(
+        # Build the new model object outside the lock to avoid holding it during the
+        # potentially slow download/init; then swap self._model atomically under the lock
+        # so no inference runs against a partially-replaced model.
+        new_model = FasterWhisperModel(
             model_name,
             device=resolved_device,
             compute_type=resolved_compute,
             download_root=storage_dir,
         )
-        self._model_name = model_name
-        self._device = resolved_device
-        self._compute_type = resolved_compute
-        self._storage_dir = storage_dir
-        self._beam_size = beam_size
-        self._loaded_at = time.time()
+        with _model_lock:
+            self._model = new_model
+            self._model_name = model_name
+            self._device = resolved_device
+            self._compute_type = resolved_compute
+            self._storage_dir = storage_dir
+            self._beam_size = beam_size
+            self._loaded_at = time.time()
         logger.info("Model loaded: {} on {}", model_name, resolved_device)
 
     def _resolve_device_compute(self, device: str, compute_type: str) -> tuple[str, str]:
@@ -153,15 +158,21 @@ class WhisperModel:
 
         lang = language if language and language != "auto" else None
 
-        segments, info = self._model.transcribe(
-            audio_data,
-            language=lang,
-            beam_size=self._beam_size,
-            vad_filter=vad_filter,
-            initial_prompt=initial_prompt,
-        )
+        # _model_lock is held for the entire duration of inference including
+        # full consumption of the lazy segments generator, which is where
+        # faster-whisper actually runs the CTranslate2 forward passes.
+        with _model_lock:
+            segments, info = self._model.transcribe(
+                audio_data,
+                language=lang,
+                beam_size=self._beam_size,
+                vad_filter=vad_filter,
+                initial_prompt=initial_prompt,
+            )
+            # Consume the generator inside the lock; the join drives all
+            # remaining inference steps before the lock is released.
+            text = " ".join(segment.text for segment in segments).strip()
 
-        text = " ".join(segment.text for segment in segments).strip()
         text = sanitize_transcription(text, info.language)
         return {
             "text": text,
@@ -181,40 +192,67 @@ class WhisperModel:
 
         lang = language if language and language != "auto" else None
 
-        segments, info = self._model.transcribe(
-            audio_data,
-            language=lang,
-            beam_size=self._beam_size,
-            vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 500},
-            word_timestamps=True,
-            condition_on_previous_text=False,
-            no_speech_threshold=0.6,
-            log_prob_threshold=-1.0,
-            compression_ratio_threshold=2.4,
-            temperature=0.0,
-            initial_prompt=initial_prompt,
-        )
-        return list(segments), info
+        with _model_lock:
+            segments, info = self._model.transcribe(
+                audio_data,
+                language=lang,
+                beam_size=self._beam_size,
+                vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 500},
+                word_timestamps=True,
+                condition_on_previous_text=False,
+                no_speech_threshold=0.6,
+                log_prob_threshold=-1.0,
+                compression_ratio_threshold=2.4,
+                temperature=0.0,
+                initial_prompt=initial_prompt,
+            )
+            # list() drives full consumption of the lazy generator inside the lock.
+            return list(segments), info
 
     def transcribe_file_stream(self, file_path: str, language: Optional[str], initial_prompt: Optional[str] = None):
-        """Return (segments_iterable, info) for a media file. faster-whisper handles ffmpeg internally."""
+        """Return (segments_generator, info) for a media file. faster-whisper handles ffmpeg internally.
+
+        _model_lock is acquired before self._model.transcribe() and released only when the
+        returned generator is fully exhausted or closed (via .close() / GeneratorExit).
+        This keeps the lock held across the entire lazy CTranslate2 decode, which is
+        required because the decoder holds internal state between segments that is not
+        safe to share with a concurrent transcribe() call on the same model instance.
+
+        Callers MUST ensure the generator is either fully exhausted or explicitly closed
+        (segments.close()) on every exit path so the lock is released exactly once.
+        """
         if self._model is None:
             raise RuntimeError("Model not loaded")
 
         lang = language if language and language != "auto" else None
 
-        segments, info = self._model.transcribe(
-            file_path,
-            language=lang,
-            beam_size=self._beam_size,
-            vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 500},
-            condition_on_previous_text=False,
-            no_speech_threshold=0.6,
-            initial_prompt=initial_prompt,
-        )
-        return segments, info
+        _model_lock.acquire()
+        try:
+            segments, info = self._model.transcribe(
+                file_path,
+                language=lang,
+                beam_size=self._beam_size,
+                vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 500},
+                condition_on_previous_text=False,
+                no_speech_threshold=0.6,
+                initial_prompt=initial_prompt,
+            )
+        except BaseException:
+            _model_lock.release()
+            raise
+
+        def _locked_segments():
+            try:
+                for seg in segments:
+                    yield seg
+            finally:
+                # Fires on normal exhaustion, generator.close(), and unhandled exceptions
+                # propagated through the generator frame - releasing the lock exactly once.
+                _model_lock.release()
+
+        return _locked_segments(), info
 
     def reload(self, model_name: str, device: str, compute_type: str, beam_size: int) -> None:
         self.load(model_name, device, compute_type, self._storage_dir, beam_size)
@@ -233,6 +271,10 @@ class WhisperModel:
 
 
 whisper = WhisperModel()
+# Single server-wide lock that serialises ALL faster-whisper inference calls and model
+# reloads. threading.Lock (not asyncio.Lock) because the actual transcribe() runs in
+# worker threads spawned via asyncio.to_thread / threading.Thread.
+_model_lock = threading.Lock()
 server_args: argparse.Namespace
 start_time: float = time.time()
 
@@ -376,6 +418,7 @@ async def transcribe_file(
     disconnect_poll_interval_sec = 0.5
 
     def worker() -> None:
+        segments = None
         try:
             t0 = time.time()
             segments, info = whisper.transcribe_file_stream(body.path, body.language, body.initial_prompt)
@@ -410,13 +453,6 @@ async def transcribe_file(
                     last_wall = now
 
             if cancelled:
-                # Best-effort close of the underlying generator so faster-whisper releases resources.
-                close_fn = getattr(segments, "close", None)
-                if callable(close_fn):
-                    try:
-                        close_fn()
-                    except Exception as exc:
-                        logger.debug("segments.close() raised: {}", exc)
                 logger.info("Transcription cancelled by client: {}", body.path)
                 return
 
@@ -443,6 +479,11 @@ async def transcribe_file(
             logger.error("File transcribe failed: {}", exc)
             loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "message": str(exc)})
         finally:
+            # Always close the generator so _locked_segments() finally-block releases
+            # _model_lock even when the for-loop was exited early (break or exception).
+            # Closing an already-exhausted generator is a safe no-op.
+            if segments is not None:
+                segments.close()
             loop.call_soon_threadsafe(queue.put_nowait, None)
 
     threading.Thread(target=worker, daemon=True).start()

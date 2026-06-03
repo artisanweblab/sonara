@@ -118,13 +118,32 @@ export async function registerTimeTrackerModule(
 
     const stored = timer.getStoredActiveSlug();
     if (stored) {
-        void resumePrompt(timer, taskStore, stored);
+        const currentProjectId = activeProject.get()?.uri.toString() ?? null;
+        void resumePrompt(timer, taskStore, stored.slug, stored.projectId, currentProjectId);
     }
 
     return timer;
 }
 
-async function resumePrompt(timer: TimerService, taskStore: TaskStore, slug: string): Promise<void> {
+async function resumePrompt(
+    timer: TimerService,
+    taskStore: TaskStore,
+    slug: string,
+    storedProjectId: string | null,
+    currentProjectId: string | null,
+): Promise<void> {
+    // If the stored slug belongs to a different project, discard it silently.
+    if (storedProjectId !== null && currentProjectId !== null && storedProjectId !== currentProjectId) {
+        await timer.clearStoredActive();
+        return;
+    }
+    // Old format (storedProjectId === null): project unknown - do not resume to avoid
+    // writing ticks into the wrong project's day-store.
+    if (storedProjectId === null) {
+        await timer.clearStoredActive();
+        return;
+    }
+
     // Wait for task store to be initialized so we can check existence.
     const taskFileExists = (): boolean => {
         const entries = taskStore.getEntries();

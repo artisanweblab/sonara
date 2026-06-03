@@ -59,7 +59,7 @@ export class StatusBar implements vscode.Disposable {
         const serverStatus = this.server.status;
         const isTranscribing = this.transcribingState?.isActive === true;
 
-        if (recorderState === 'recording') {
+        if (recorderState === 'starting' || recorderState === 'recording') {
             this.item.text = '$(record) Voice: Recording';
             this.item.tooltip = 'Recording - click or press Ctrl+Shift+M to stop, Ctrl+Alt+M to cancel';
             this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');

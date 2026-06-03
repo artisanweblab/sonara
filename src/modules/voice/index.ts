@@ -22,10 +22,12 @@ import { createTimestampedOutputChannel } from '../../shared/timestamped-channel
 import { ActiveProject } from '../../shared/active-project';
 import { voiceLogFile, transcriptsDir } from '../../shared/project-layout';
 
+// M5: Returns the ServerManager so extension.ts can perform a graceful
+// shutdown in deactivate().  Returns null when setup was skipped/failed.
 export async function registerVoiceModule(
     context: vscode.ExtensionContext,
     activeProject: ActiveProject,
-): Promise<void> {
+): Promise<ServerManager | null> {
     const extensionLog = createTimestampedOutputChannel('Sonara Voice');
     const serverLog = createTimestampedOutputChannel('Sonara Voice — Server');
     context.subscriptions.push(extensionLog, serverLog);
@@ -35,7 +37,7 @@ export async function registerVoiceModule(
         const ok = await setup.runFirstTimeSetup();
         if (!ok) {
             extensionLog.appendLine('[Extension] Setup skipped or failed. Extension inactive.');
-            return;
+            return null;
         }
     }
 
@@ -146,4 +148,6 @@ export async function registerVoiceModule(
     if (vscode.workspace.getConfiguration('sonara.voice.log').get<boolean>('autoOpenPanel', false)) {
         vscode.commands.executeCommand('sonara.voice.showLog');
     }
+
+    return server;
 }

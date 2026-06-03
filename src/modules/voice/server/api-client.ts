@@ -57,6 +57,37 @@ export interface StreamingSession {
     cancel(): void;
 }
 
+// M7: Error codes / message fragments that indicate the local server process
+// is down or restarting (as opposed to a normal application-level error).
+const SERVER_UNAVAILABLE_PATTERNS = [
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ENOTFOUND',
+    'socket hang up',
+    'fetch failed',
+    'Failed to fetch',
+    'NetworkError',
+    'net::ERR',
+    'Load failed',
+];
+
+function isServerUnavailableError(err: unknown): boolean {
+    if (!(err instanceof Error)) {
+        return false;
+    }
+    const msg = err.message;
+    return SERVER_UNAVAILABLE_PATTERNS.some(pattern => msg.includes(pattern));
+}
+
+function wrapNetworkError(err: unknown): never {
+    if (isServerUnavailableError(err)) {
+        throw new Error(
+            'Voice server is not available (it may be restarting). Please retry in a few seconds.'
+        );
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+}
+
 export class ApiClient {
     private baseUrl: string = '';
     private port: number = 0;
@@ -88,12 +119,17 @@ export class ApiClient {
             formData.append('initial_prompt', initialPrompt);
         }
 
-        const response = await fetch(`${this.baseUrl}/transcribe`, {
-            method: 'POST',
-            headers: { 'X-Extension-Token': this.token },
-            body: formData,
-            signal: AbortSignal.timeout(60000),
-        });
+        let response: Response;
+        try {
+            response = await fetch(`${this.baseUrl}/transcribe`, {
+                method: 'POST',
+                headers: { 'X-Extension-Token': this.token },
+                body: formData,
+                signal: AbortSignal.timeout(60000),
+            });
+        } catch (err) {
+            wrapNetworkError(err);
+        }
 
         if (!response.ok) {
             const text = await response.text().catch(() => '');
@@ -144,7 +180,7 @@ export class ApiClient {
             if (isAbortError(err)) {
                 throw new TranscriptionCancelledError();
             }
-            throw err;
+            wrapNetworkError(err);
         }
 
         if (!response.ok) {
@@ -213,10 +249,15 @@ export class ApiClient {
     }
 
     async health(): Promise<HealthResult> {
-        const response = await fetch(`${this.baseUrl}/health`, {
-            headers: { 'X-Extension-Token': this.token },
-            signal: AbortSignal.timeout(3000),
-        });
+        let response: Response;
+        try {
+            response = await fetch(`${this.baseUrl}/health`, {
+                headers: { 'X-Extension-Token': this.token },
+                signal: AbortSignal.timeout(3000),
+            });
+        } catch (err) {
+            wrapNetworkError(err);
+        }
 
         if (!response.ok) {
             throw new Error(`Health check failed: HTTP ${response.status}`);
@@ -254,18 +295,22 @@ export class ApiClient {
 
         const ws = new WebSocket(url.toString());
 
-        await new Promise<void>((resolve, reject) => {
-            const onOpen = (): void => {
-                ws.off('error', onError);
-                resolve();
-            };
-            const onError = (err: Error): void => {
-                ws.off('open', onOpen);
-                reject(err);
-            };
-            ws.once('open', onOpen);
-            ws.once('error', onError);
-        });
+        try {
+            await new Promise<void>((resolve, reject) => {
+                const onOpen = (): void => {
+                    ws.off('error', onError);
+                    resolve();
+                };
+                const onError = (err: Error): void => {
+                    ws.off('open', onOpen);
+                    reject(err);
+                };
+                ws.once('open', onOpen);
+                ws.once('error', onError);
+            });
+        } catch (err) {
+            wrapNetworkError(err);
+        }
 
         const partialListeners: Array<(p: StreamingPartial) => void> = [];
         let finalResolve: ((r: StreamingFinal) => void) | null = null;
@@ -357,13 +402,18 @@ export class ApiClient {
         formData.append('compute_type', computeType);
         formData.append('beam_size', String(beamSize));
 
-        const response = await fetch(`${this.baseUrl}/reload`, {
-            method: 'POST',
-            headers: { 'X-Extension-Token': this.token },
-            body: formData,
-            // 30 minutes - same as initial model download ceiling, covers large-v3 on slow networks.
-            signal: AbortSignal.timeout(1800000),
-        });
+        let response: Response;
+        try {
+            response = await fetch(`${this.baseUrl}/reload`, {
+                method: 'POST',
+                headers: { 'X-Extension-Token': this.token },
+                body: formData,
+                // 30 minutes - same as initial model download ceiling, covers large-v3 on slow networks.
+                signal: AbortSignal.timeout(1800000),
+            });
+        } catch (err) {
+            wrapNetworkError(err);
+        }
 
         if (!response.ok) {
             throw new Error(`Reload failed: HTTP ${response.status}`);

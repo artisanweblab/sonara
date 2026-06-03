@@ -15,6 +15,16 @@ import {
 
 export type ServerStatus = 'stopped' | 'starting' | 'ready' | 'error';
 
+// How long a spawn lock may be held before we consider it stale (e.g. the
+// holder crashed mid-spawn without cleaning up).
+const SPAWN_LOCK_STALE_MS = 60_000;
+// How often to poll for the port/token files while waiting for another window
+// to finish spawning.
+const SPAWN_LOCK_POLL_INTERVAL_MS = 500;
+// Maximum time to wait for another window to finish spawning before giving up
+// and attempting to spawn ourselves.
+const SPAWN_LOCK_WAIT_TIMEOUT_MS = 90_000;
+
 export class ServerManager implements vscode.Disposable {
     private process: cp.ChildProcess | null = null;
     private _status: ServerStatus = 'stopped';
@@ -65,7 +75,24 @@ export class ServerManager implements vscode.Disposable {
             return;
         }
 
-        this._token = crypto.randomBytes(32).toString('hex');
+        // M6: Acquire an exclusive spawn lock so that two windows starting at
+        // the same moment do not each spawn their own Python process.
+        const lockAcquired = this.acquireSpawnLock();
+
+        if (!lockAcquired) {
+            // Another window holds the lock - wait for it to finish spawning,
+            // then adopt its server.
+            this.extensionLog.appendLine('[ServerManager] Another window is spawning - waiting to adopt...');
+            const adopted = await this.waitForSpawnAndAdopt();
+            if (adopted) {
+                this.extensionLog.appendLine(`[ServerManager] Adopted server spawned by another window on port ${this._port}`);
+                this.setStatus('ready');
+                this.startHealthCheck();
+                return;
+            }
+            // Timed out waiting - fall through and try to spawn ourselves.
+            this.extensionLog.appendLine('[ServerManager] Timed out waiting for other window to spawn; attempting own spawn.');
+        }
 
         try {
             await this.spawnServer();
@@ -73,10 +100,18 @@ export class ServerManager implements vscode.Disposable {
         } catch (err) {
             this.extensionLog.appendLine(`[ServerManager] Failed to start: ${err}`);
             this.setStatus('error');
+        } finally {
+            if (lockAcquired) {
+                this.releaseSpawnLock();
+            }
         }
     }
 
-    async stop(): Promise<void> {
+    // cleanupToken: pass true for a final stop (extension deactivate / window
+    // close) to remove the token file.  Pass false (default) for a transient
+    // stop before restart so that spawnServer() can reuse the existing token
+    // (H3: keeps adopter windows valid across owner restarts).
+    async stop(cleanupToken: boolean = false): Promise<void> {
         this.stopHealthCheck();
 
         if (!this.isServerOwner) {
@@ -110,16 +145,28 @@ export class ServerManager implements vscode.Disposable {
         this._port = null;
         this.isServerOwner = false;
 
-        const tokenFile = this.getTokenFilePath();
-        if (fs.existsSync(tokenFile)) {
-            fs.unlinkSync(tokenFile);
+        // M5: Always remove the port file so adopters see the server is gone.
+        const storageDir = this.context.globalStorageUri.fsPath;
+        const portFile = serverPortFile(storageDir);
+        if (fs.existsSync(portFile)) {
+            try { fs.unlinkSync(portFile); } catch { /* best effort */ }
+        }
+
+        // H3: Remove the token file only on final shutdown.  During restart the
+        // token file is kept so spawnServer() can reuse the same token, which
+        // lets adopter windows skip a re-adopt cycle.
+        if (cleanupToken) {
+            const tokenFile = this.getTokenFilePath();
+            if (fs.existsSync(tokenFile)) {
+                try { fs.unlinkSync(tokenFile); } catch { /* best effort */ }
+            }
         }
 
         this.setStatus('stopped');
     }
 
     async restart(): Promise<void> {
-        await this.stop();
+        await this.stop(false);
         await new Promise(resolve => setTimeout(resolve, 500));
         await this.start();
     }
@@ -172,6 +219,12 @@ export class ServerManager implements vscode.Disposable {
         const storageDir = this.context.globalStorageUri.fsPath;
         const portFile = serverPortFile(storageDir);
         const logFile = serverLogFile(storageDir);
+
+        // H3: Reuse the existing token if the token file is present and valid.
+        // This keeps adopter windows valid across owner restarts because they
+        // still hold the same token.  Generate a fresh token only when there
+        // is no token file (first start or after a clean stop).
+        this._token = this.loadOrGenerateToken();
 
         const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
         const model = config.get<string>('model', VOICE_DEFAULTS.model);
@@ -506,6 +559,89 @@ export class ServerManager implements vscode.Disposable {
         });
     }
 
+    // H3: Load a pre-existing token from the token file when available and
+    // valid; generate a new one only when the file is absent or unreadable.
+    private loadOrGenerateToken(): string {
+        const tokenFile = this.getTokenFilePath();
+        try {
+            if (fs.existsSync(tokenFile)) {
+                const existing = fs.readFileSync(tokenFile, 'utf8').trim();
+                if (existing.length > 0) {
+                    this.extensionLog.appendLine('[ServerManager] Reusing existing token from token file.');
+                    return existing;
+                }
+            }
+        } catch {
+            // File unreadable or corrupt - fall through to generate a new one.
+        }
+        this.extensionLog.appendLine('[ServerManager] Generating new token.');
+        return crypto.randomBytes(32).toString('hex');
+    }
+
+    private getSpawnLockFilePath(): string {
+        return path.join(this.context.globalStorageUri.fsPath, 'server-spawn.lock');
+    }
+
+    // M6: Try to acquire an exclusive spawn lock.
+    // Returns true  when we own the lock (caller must call releaseSpawnLock()).
+    // Returns false when another window already holds a fresh lock.
+    private acquireSpawnLock(): boolean {
+        const lockFile = this.getSpawnLockFilePath();
+
+        // If a lock file exists, check whether it is stale.
+        if (fs.existsSync(lockFile)) {
+            try {
+                const stat = fs.statSync(lockFile);
+                const ageMs = Date.now() - stat.mtimeMs;
+                if (ageMs < SPAWN_LOCK_STALE_MS) {
+                    // Lock is fresh - another window is actively spawning.
+                    return false;
+                }
+                // Lock is stale - remove it and try to claim below.
+                this.extensionLog.appendLine(
+                    `[ServerManager] Stale spawn lock detected (age ${Math.round(ageMs / 1000)}s), removing.`
+                );
+                fs.unlinkSync(lockFile);
+            } catch {
+                // File disappeared between existsSync and statSync/unlink, or
+                // another window removed it first.  That's fine - fall through.
+            }
+        }
+
+        // Try to create the lock file with exclusive flag (O_EXCL).
+        try {
+            fs.writeFileSync(lockFile, String(process.pid), { flag: 'wx' });
+            return true;
+        } catch {
+            // Another window won the race for the lock.
+            return false;
+        }
+    }
+
+    private releaseSpawnLock(): void {
+        const lockFile = this.getSpawnLockFilePath();
+        try {
+            if (fs.existsSync(lockFile)) {
+                fs.unlinkSync(lockFile);
+            }
+        } catch {
+            // Best-effort cleanup.
+        }
+    }
+
+    // M6: Poll until the other window writes port/token files and the server
+    // responds healthy, then adopt it.  Returns false on timeout.
+    private async waitForSpawnAndAdopt(): Promise<boolean> {
+        const deadline = Date.now() + SPAWN_LOCK_WAIT_TIMEOUT_MS;
+        while (Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, SPAWN_LOCK_POLL_INTERVAL_MS));
+            if (await this.tryAdoptExistingServer()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private getPythonPath(): string {
         return pythonExecutable(this.context.globalStorageUri.fsPath);
     }
@@ -522,8 +658,27 @@ export class ServerManager implements vscode.Disposable {
     dispose(): void {
         this.stopHealthCheck();
         this.onStatusChangedEmitter.dispose();
-        if (this.process && !this.process.killed) {
-            this.process.kill('SIGKILL');
+        if (this.isServerOwner) {
+            // M5: dispose() reached us as owner before stop() could run
+            // (e.g. the extension host crashed or deactivate was not awaited).
+            // Kill the process and clean up both runtime files.
+            if (this.process && !this.process.killed) {
+                this.process.kill('SIGKILL');
+            }
+            const storageDir = this.context.globalStorageUri.fsPath;
+            const portFile = serverPortFile(storageDir);
+            if (fs.existsSync(portFile)) {
+                try { fs.unlinkSync(portFile); } catch { /* best effort */ }
+            }
+            const tokenFile = this.getTokenFilePath();
+            if (fs.existsSync(tokenFile)) {
+                try { fs.unlinkSync(tokenFile); } catch { /* best effort */ }
+            }
         }
+        // If stop() already ran as owner, it cleared isServerOwner and removed
+        // the port file; the token file was intentionally kept for the restart
+        // case and will have been removed by a subsequent stop() on full exit
+        // via the graceful shutdown path (deactivate → stop → dispose).
+        // Non-owner windows do nothing here - the server keeps running.
     }
 }
