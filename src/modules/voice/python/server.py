@@ -521,7 +521,23 @@ async def transcribe_stream_ws(ws: WebSocket) -> None:
 
     language = ws.query_params.get("language") or None
     initial_prompt = ws.query_params.get("initial_prompt") or None
-    process_interval_sec = float(ws.query_params.get("interval", "2.0"))
+    _interval_default = 2.0
+    try:
+        process_interval_sec = float(ws.query_params.get("interval", str(_interval_default)))
+        if process_interval_sec <= 0:
+            logger.warning(
+                "Invalid process_interval={} (must be > 0), falling back to {}s",
+                process_interval_sec,
+                _interval_default,
+            )
+            process_interval_sec = _interval_default
+    except (ValueError, TypeError):
+        logger.warning(
+            "Non-numeric process_interval={!r}, falling back to {}s",
+            ws.query_params.get("interval"),
+            _interval_default,
+        )
+        process_interval_sec = _interval_default
 
     await ws.accept()
 
@@ -651,27 +667,70 @@ async def shutdown(x_extension_token: str = Header(...)) -> ShutdownResponse:
 
 
 def _decode_wav(data: bytes) -> np.ndarray:
-    """Decode 16-bit PCM WAV to float32 numpy array."""
+    """Decode 16-bit mono 16 kHz PCM WAV to float32 numpy array.
+
+    Validates the fmt chunk: rejects non-16kHz, non-mono, non-16-bit files with
+    HTTP 400 so callers receive a meaningful error instead of distorted audio or
+    a 500 crash. Also guards against odd-length data payloads, which would cause
+    np.frombuffer to raise ValueError.
+    """
     buf = io.BytesIO(data)
 
     riff = buf.read(4)
     if riff != b"RIFF":
         raise HTTPException(status_code=400, detail="Expected RIFF WAV file")
 
-    buf.read(4)
+    buf.read(4)  # file size - ignored
     wave = buf.read(4)
     if wave != b"WAVE":
         raise HTTPException(status_code=400, detail="Expected WAVE format")
 
+    fmt_validated = False
+    raw: Optional[bytes] = None
+
     while True:
         chunk_id = buf.read(4)
         if len(chunk_id) < 4:
-            raise HTTPException(status_code=400, detail="No data chunk in WAV")
-        chunk_size = struct.unpack("<I", buf.read(4))[0]
-        if chunk_id == b"data":
+            break
+        size_bytes = buf.read(4)
+        if len(size_bytes) < 4:
+            raise HTTPException(status_code=400, detail="Truncated WAV chunk header")
+        chunk_size = struct.unpack("<I", size_bytes)[0]
+
+        if chunk_id == b"fmt ":
+            if chunk_size < 16:
+                raise HTTPException(status_code=400, detail="WAV fmt chunk too small")
+            fmt_data = buf.read(chunk_size)
+            audio_format, num_channels, sample_rate, _, _, bits_per_sample = struct.unpack_from("<HHIIHH", fmt_data)
+            if audio_format != 1:
+                raise HTTPException(status_code=400, detail=f"Unsupported WAV format {audio_format}; only PCM (1) accepted")
+            if num_channels != 1:
+                raise HTTPException(status_code=400, detail=f"Expected mono audio, got {num_channels} channels")
+            if sample_rate != 16000:
+                raise HTTPException(status_code=400, detail=f"Expected 16000 Hz sample rate, got {sample_rate}")
+            if bits_per_sample != 16:
+                raise HTTPException(status_code=400, detail=f"Expected 16-bit audio, got {bits_per_sample}-bit")
+            fmt_validated = True
+
+        elif chunk_id == b"data":
+            if not fmt_validated:
+                raise HTTPException(status_code=400, detail="WAV data chunk found before fmt chunk")
             raw = buf.read(chunk_size)
             break
-        buf.read(chunk_size)
+
+        else:
+            buf.read(chunk_size)
+
+    if raw is None:
+        raise HTTPException(status_code=400, detail="No data chunk in WAV")
+
+    # Trim a trailing odd byte to prevent np.frombuffer ValueError on malformed payloads.
+    if len(raw) % 2 != 0:
+        logger.warning("WAV data length {} is odd; trimming last byte", len(raw))
+        raw = raw[:-1]
+
+    if len(raw) == 0:
+        raise HTTPException(status_code=400, detail="WAV data chunk is empty")
 
     samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
     return samples

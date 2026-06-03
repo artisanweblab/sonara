@@ -57,18 +57,35 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
 
     let adaptiveActive: boolean = false;
     let adaptiveBuffer: Buffer[] = [];
+    let adaptiveBufferBytes: number = 0;
     let adaptiveTimer: NodeJS.Timeout | null = null;
     let adaptiveUpgradePromise: Promise<void> | null = null;
     let adaptiveInitialPrompt: string | null = null;
     let adaptiveIntervalSec: number = 2;
     let adaptiveHeadText: string = '';
 
+    // Max PCM bytes held in adaptiveBuffer before forcing an upgrade (≈90s @ 16kHz/16bit/mono).
+    const ADAPTIVE_BUFFER_BYTE_LIMIT = 3 * 1024 * 1024;
+
     // Snapshotted at recording start - writes always go to origin folder.
     let recordingLogStore: LogStore | null = null;
+    // Vocabulary snapshotted at start so stopRecording uses the project that was
+    // active when the recording began, not the one active when stop is pressed.
+    let recordingVocabularySnapshot: string[] | null = null;
 
     let isTranscribing: boolean = false;
     const transcribingChangedEmitter = new vscode.EventEmitter<boolean>();
     extensionContext.subscriptions.push(transcribingChangedEmitter);
+
+    // L4: when the recorder crashes into idle (async spawn error) the draft must
+    // be cleared so it doesn't hang in the log panel indefinitely.
+    extensionContext.subscriptions.push(
+        recorder.onStateChanged(state => {
+            if (state === 'idle') {
+                clearDraft();
+            }
+        }),
+    );
 
     function setTranscribing(value: boolean): void {
         if (isTranscribing === value) {
@@ -174,6 +191,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
         recordingLogStore = snapshotRecordingStore();
 
         const vocabulary = loadRecordingVocabulary();
+        recordingVocabularySnapshot = vocabulary;
         const initialPrompt = buildInitialPrompt(vocabulary);
         if (initialPrompt) {
             extensionLog.appendLine(`[Streaming] vocabulary terms: ${vocabulary.length}`);
@@ -233,6 +251,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
         recordingLogStore = snapshotRecordingStore();
 
         const vocabulary = loadRecordingVocabulary();
+        recordingVocabularySnapshot = vocabulary;
         adaptiveInitialPrompt = buildInitialPrompt(vocabulary);
         if (adaptiveInitialPrompt) {
             extensionLog.appendLine(`[Adaptive] vocabulary terms: ${vocabulary.length}`);
@@ -247,6 +266,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
         streamingFinalizing = false;
         adaptiveActive = true;
         adaptiveBuffer = [];
+        adaptiveBufferBytes = 0;
         adaptiveUpgradePromise = null;
         adaptiveHeadText = '';
 
@@ -264,12 +284,21 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
                     streamingSession.sendAudio(chunk);
                 } else {
                     adaptiveBuffer.push(chunk);
+                    adaptiveBufferBytes += chunk.length;
+                    if (adaptiveBufferBytes >= ADAPTIVE_BUFFER_BYTE_LIMIT && !adaptiveUpgradePromise) {
+                        extensionLog.appendLine(`[Adaptive] buffer limit reached (${adaptiveBufferBytes} bytes), forcing upgrade`);
+                        clearAdaptiveTimer();
+                        adaptiveUpgradePromise = upgradeAdaptiveToStreaming().catch(upgradeErr => {
+                            extensionLog.appendLine(`[Adaptive] forced upgrade failed: ${upgradeErr}`);
+                        });
+                    }
                 }
             });
         } catch (err) {
             extensionLog.appendLine(`[Adaptive] recorder.startStreaming failed: ${err}`);
             adaptiveActive = false;
             adaptiveBuffer = [];
+            adaptiveBufferBytes = 0;
             clearDraft();
             throw err;
         }
@@ -289,6 +318,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
 
         const headChunks = adaptiveBuffer;
         adaptiveBuffer = [];
+        adaptiveBufferBytes = 0;
         extensionLog.appendLine(`[Adaptive] threshold reached, transcribing buffered head (${headChunks.length} chunks)`);
 
         let headText = '';
@@ -339,6 +369,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
 
         const lateChunks = adaptiveBuffer;
         adaptiveBuffer = [];
+        adaptiveBufferBytes = 0;
         for (const chunk of lateChunks) {
             session.sendAudio(chunk);
         }
@@ -352,7 +383,16 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
     }
 
     async function finalizeAdaptiveAsClassic(): Promise<void> {
-        extensionLog.appendLine('[Adaptive] finalize as classic (short message)');
+        // headText is non-empty when upgrade was attempted but failed after the
+        // head had already been transcribed (buffer was drained for transcription
+        // before openTranscribeStream; the remaining tail is in adaptiveBuffer).
+        const headText = adaptiveHeadText;
+        const hasHead = headText.length > 0;
+        if (hasHead) {
+            extensionLog.appendLine(`[Adaptive] finalize as classic with pre-transcribed head (${headText.length} chars), tail chunks=${adaptiveBuffer.length}`);
+        } else {
+            extensionLog.appendLine('[Adaptive] finalize as classic (short message)');
+        }
 
         let stopResult: { durationSec: number };
         try {
@@ -366,37 +406,78 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
 
         const bufferedChunks = adaptiveBuffer;
         adaptiveBuffer = [];
+        adaptiveBufferBytes = 0;
 
-        if (stopResult.durationSec < 0.3 || bufferedChunks.length === 0) {
+        // If we have only a pre-transcribed head and no tail audio, save it directly.
+        if (hasHead && bufferedChunks.length === 0) {
+            clearDraft();
+            const trimmed = headText.trim();
+            if (!trimmed) {
+                return;
+            }
+            const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
+            const record: VoiceRecord = {
+                id: streamingDraftId,
+                timestamp: new Date(streamingStartMs).toISOString(),
+                text: trimmed,
+                language: streamingLanguage,
+                duration_sec: stopResult.durationSec,
+                model: config.get<string>('model', VOICE_DEFAULTS.model),
+                tags: [],
+                copied: false,
+            };
+            await recordingLogStore?.add(record);
+            const showNotification = vscode.workspace
+                .getConfiguration('sonara.voice.log')
+                .get<boolean>('showNotificationOnTranscribe', true);
+            if (showNotification) {
+                const previewLimit = 50;
+                const preview = trimmed.slice(0, previewLimit) + (trimmed.length > previewLimit ? '...' : '');
+                vscode.window.showInformationMessage(`Transcribed: "${preview}"`);
+            }
+            return;
+        }
+
+        if (!hasHead && (stopResult.durationSec < 0.3 || bufferedChunks.length === 0)) {
             clearDraft();
             return;
         }
 
-        publishTranscribingDraft(stopResult.durationSec, '');
+        publishTranscribingDraft(stopResult.durationSec, hasHead ? headText : '');
 
-        const wavBuffer = encodePcmToWav(bufferedChunks);
         const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
 
-        setTranscribing(true);
-        let transcribeResult;
-        try {
-            transcribeResult = await apiClient.transcribe(
-                wavBuffer,
-                config.get<string>('language', VOICE_DEFAULTS.language),
-                config.get<boolean>('vadFilter', VOICE_DEFAULTS.vadFilter),
-                adaptiveInitialPrompt,
-            );
-        } catch (err) {
-            clearDraft();
-            vscode.window.showErrorMessage(`Transcription failed: ${err}`);
-            return;
-        } finally {
-            setTranscribing(false);
+        let tailText = '';
+        if (bufferedChunks.length > 0) {
+            const wavBuffer = encodePcmToWav(bufferedChunks);
+            // When a head was already transcribed, use its tail as prompt for the tail segment.
+            const tailPrompt = hasHead
+                ? (headText.slice(-200) || adaptiveInitialPrompt)
+                : adaptiveInitialPrompt;
+
+            setTranscribing(true);
+            try {
+                const transcribeResult = await apiClient.transcribe(
+                    wavBuffer,
+                    config.get<string>('language', VOICE_DEFAULTS.language),
+                    config.get<boolean>('vadFilter', VOICE_DEFAULTS.vadFilter),
+                    tailPrompt,
+                );
+                tailText = transcribeResult.text;
+            } catch (err) {
+                clearDraft();
+                vscode.window.showErrorMessage(`Transcription failed: ${err}`);
+                return;
+            } finally {
+                setTranscribing(false);
+            }
         }
 
         clearDraft();
 
-        if (!transcribeResult.text.trim()) {
+        const combinedText = hasHead ? joinHeadAndTail(headText, tailText) : tailText;
+
+        if (!combinedText.trim()) {
             vscode.window.showWarningMessage(
                 'Recorded only silence. Check that your microphone is on, not muted, and selected as the active input.'
             );
@@ -406,9 +487,9 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
         const record: VoiceRecord = {
             id: streamingDraftId,
             timestamp: new Date(streamingStartMs).toISOString(),
-            text: transcribeResult.text,
-            language: transcribeResult.language,
-            duration_sec: transcribeResult.durationSec,
+            text: combinedText,
+            language: streamingLanguage,
+            duration_sec: stopResult.durationSec,
             model: config.get<string>('model', VOICE_DEFAULTS.model),
             tags: [],
             copied: false,
@@ -421,8 +502,8 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             .get<boolean>('showNotificationOnTranscribe', true);
         if (showNotification) {
             const previewLimit = 50;
-            const preview = transcribeResult.text.slice(0, previewLimit) +
-                (transcribeResult.text.length > previewLimit ? '...' : '');
+            const preview = combinedText.slice(0, previewLimit) +
+                (combinedText.length > previewLimit ? '...' : '');
             vscode.window.showInformationMessage(`Transcribed: "${preview}"`);
         }
     }
@@ -459,6 +540,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
 
         setTranscribing(true);
         let finalText = streamingFinalText;
+        let finalizeErrored = false;
         try {
             const result = await session.finalize();
             const tailText = result.text || '';
@@ -468,6 +550,8 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             extensionLog.appendLine(`[Streaming] final text length=${finalText.length}`);
         } catch (err) {
             extensionLog.appendLine(`[Streaming] finalize error: ${err}`);
+            finalizeErrored = true;
+            // finalText retains the last known streamingFinalText (partials accumulated so far)
         } finally {
             setTranscribing(false);
         }
@@ -485,6 +569,12 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
         const trimmed = finalText.trim();
         if (stopResult.durationSec < 0.3 || !trimmed) {
             return;
+        }
+
+        if (finalizeErrored) {
+            vscode.window.showWarningMessage(
+                'Finalization failed - saving partial transcription captured so far.'
+            );
         }
 
         const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
@@ -554,6 +644,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
         clearAdaptiveTimer();
         adaptiveActive = false;
         adaptiveBuffer = [];
+        adaptiveBufferBytes = 0;
         adaptiveUpgradePromise = null;
         adaptiveHeadText = '';
         streamingFinalizing = false;
@@ -620,6 +711,10 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
                 await vscode.commands.executeCommand('sonara.voice.stopRecording');
                 return;
             }
+            if (recorder.state === 'finishing' || recorder.state === 'processing') {
+                // Busy wrapping up the previous recording - ignore silently.
+                return;
+            }
             if (isTranscribing) {
                 vscode.window.showInformationMessage(
                     'Wait, transcribing the previous recording...',
@@ -671,6 +766,8 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
                     await startAdaptiveFlow();
                 } else {
                     recordingLogStore = snapshotRecordingStore();
+                    const classicVocabulary = loadRecordingVocabulary();
+                    recordingVocabularySnapshot = classicVocabulary;
                     streamingStartMs = Date.now();
                     streamingDraftId = crypto.randomUUID();
                     publishDraft('recording', '', '');
@@ -730,7 +827,9 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             publishTranscribingDraft(result.durationSec, '');
 
             const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
-            const vocabulary = loadRecordingVocabulary();
+            // Use the vocabulary snapshotted at recording start so the correct
+            // project's terms are used even if the active project changed.
+            const vocabulary = recordingVocabularySnapshot ?? loadRecordingVocabulary();
             const initialPrompt = buildInitialPrompt(vocabulary);
 
             setTranscribing(true);

@@ -22,6 +22,48 @@ import { createTimestampedOutputChannel } from '../../shared/timestamped-channel
 import { ActiveProject } from '../../shared/active-project';
 import { voiceLogFile, transcriptsDir } from '../../shared/project-layout';
 
+/** All command IDs declared in package.json that live inside registerVoiceModule. */
+const VOICE_COMMAND_IDS: readonly string[] = [
+    'sonara.voice.toggleRecording',
+    'sonara.voice.startRecording',
+    'sonara.voice.stopRecording',
+    'sonara.voice.cancelRecording',
+    'sonara.voice.toggleStreamingMode',
+    'sonara.voice.changeModel',
+    'sonara.voice.changeLanguage',
+    'sonara.voice.changeDevice',
+    'sonara.voice.downloadModel',
+    'sonara.voice.changeAudioInput',
+    'sonara.voice.showLog',
+    'sonara.voice.log.refresh',
+    'sonara.voice.toggleShowAll.expand',
+    'sonara.voice.toggleShowAll.collapse',
+    'sonara.voice.clearProjectLog',
+    'sonara.voice.transcripts.refresh',
+    'sonara.voice.restartServer',
+    'sonara.voice.showServerLogs',
+    'sonara.voice.showExtensionLogs',
+    'sonara.voice.editVocabulary',
+    'sonara.voice.transcribeFile',
+];
+
+/**
+ * Registers no-op stubs for all voice commands so that keyboard shortcuts and
+ * the command palette show a clear error instead of "command not found" when
+ * the extension setup was skipped or failed.
+ */
+function registerVoiceCommandStubs(context: vscode.ExtensionContext): void {
+    for (const id of VOICE_COMMAND_IDS) {
+        context.subscriptions.push(
+            vscode.commands.registerCommand(id, () => {
+                vscode.window.showWarningMessage(
+                    'Voice setup is not completed. Run the Sonara setup wizard to activate voice features.'
+                );
+            }),
+        );
+    }
+}
+
 // M5: Returns the ServerManager so extension.ts can perform a graceful
 // shutdown in deactivate().  Returns null when setup was skipped/failed.
 export async function registerVoiceModule(
@@ -37,6 +79,7 @@ export async function registerVoiceModule(
         const ok = await setup.runFirstTimeSetup();
         if (!ok) {
             extensionLog.appendLine('[Extension] Setup skipped or failed. Extension inactive.');
+            registerVoiceCommandStubs(context);
             return null;
         }
     }

@@ -86,6 +86,32 @@ export class VoiceTranscriptsPanel implements vscode.WebviewViewProvider, vscode
         return path.join(this.store.storageDir ?? '', id);
     }
 
+    /**
+     * Returns true when id is safe: no path separators, no "..", not absolute.
+     * Also verifies the id exists in the current store listing.
+     */
+    private async isKnownId(id: string): Promise<boolean> {
+        if (
+            id.includes('/') ||
+            id.includes('\\') ||
+            id.includes('..') ||
+            path.isAbsolute(id)
+        ) {
+            return false;
+        }
+        const items = await this.store.list();
+        return items.some(item => item.id === id);
+    }
+
+    private async fileExists(filePath: string): Promise<boolean> {
+        try {
+            await vscode.workspace.fs.stat(vscode.Uri.file(filePath));
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
     private async handleMessage(msg: PanelMessage): Promise<void> {
         switch (msg.type) {
             case 'ready':
@@ -93,34 +119,94 @@ export class VoiceTranscriptsPanel implements vscode.WebviewViewProvider, vscode
                 break;
 
             case 'open': {
-                await openInEditor(this.fullPath(msg.id));
+                if (!(await this.isKnownId(msg.id))) {
+                    break;
+                }
+                const openPath = this.fullPath(msg.id);
+                if (!(await this.fileExists(openPath))) {
+                    await vscode.window.showInformationMessage(`Transcript "${msg.id}" no longer exists.`);
+                    await this.forceRefresh();
+                    break;
+                }
+                try {
+                    await openInEditor(openPath);
+                } catch {
+                    await vscode.window.showInformationMessage(`Could not open transcript "${msg.id}".`);
+                }
                 break;
             }
 
             case 'openPreview': {
-                await this.openMarkdownPreviewReusing(vscode.Uri.file(this.fullPath(msg.id)));
+                if (!(await this.isKnownId(msg.id))) {
+                    break;
+                }
+                const previewPath = this.fullPath(msg.id);
+                if (!(await this.fileExists(previewPath))) {
+                    await vscode.window.showInformationMessage(`Transcript "${msg.id}" no longer exists.`);
+                    await this.forceRefresh();
+                    break;
+                }
+                try {
+                    await this.openMarkdownPreviewReusing(vscode.Uri.file(previewPath));
+                } catch {
+                    await vscode.window.showInformationMessage(`Could not preview transcript "${msg.id}".`);
+                }
                 break;
             }
 
             case 'reveal': {
-                await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(this.fullPath(msg.id)));
+                if (!(await this.isKnownId(msg.id))) {
+                    break;
+                }
+                const revealPath = this.fullPath(msg.id);
+                if (!(await this.fileExists(revealPath))) {
+                    await vscode.window.showInformationMessage(`Transcript "${msg.id}" no longer exists.`);
+                    await this.forceRefresh();
+                    break;
+                }
+                await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(revealPath));
                 break;
             }
 
             case 'copyText': {
-                const text = await vscode.workspace.fs.readFile(vscode.Uri.file(this.fullPath(msg.id)));
-                await vscode.env.clipboard.writeText(Buffer.from(text).toString('utf8'));
-                this.view?.webview.postMessage({ type: 'copied', id: msg.id, kind: 'text' });
+                if (!(await this.isKnownId(msg.id))) {
+                    break;
+                }
+                const copyTextPath = this.fullPath(msg.id);
+                if (!(await this.fileExists(copyTextPath))) {
+                    await vscode.window.showInformationMessage(`Transcript "${msg.id}" no longer exists.`);
+                    await this.forceRefresh();
+                    break;
+                }
+                try {
+                    const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(copyTextPath));
+                    await vscode.env.clipboard.writeText(Buffer.from(bytes).toString('utf8'));
+                    this.view?.webview.postMessage({ type: 'copied', id: msg.id, kind: 'text' });
+                } catch {
+                    await vscode.window.showInformationMessage(`Could not read transcript "${msg.id}".`);
+                }
                 break;
             }
 
             case 'copyPath': {
-                await vscode.env.clipboard.writeText(this.fullPath(msg.id));
+                if (!(await this.isKnownId(msg.id))) {
+                    break;
+                }
+                const copyFilePath = this.fullPath(msg.id);
+                if (!(await this.fileExists(copyFilePath))) {
+                    await vscode.window.showInformationMessage(`Transcript "${msg.id}" no longer exists.`);
+                    await this.forceRefresh();
+                    break;
+                }
+                await vscode.env.clipboard.writeText(copyFilePath);
                 this.view?.webview.postMessage({ type: 'copied', id: msg.id, kind: 'path' });
                 break;
             }
 
             case 'delete': {
+                if (!(await this.isKnownId(msg.id))) {
+                    break;
+                }
                 const confirm = await vscode.window.showWarningMessage(
                     `Delete transcript "${msg.id}"?`,
                     { modal: true },

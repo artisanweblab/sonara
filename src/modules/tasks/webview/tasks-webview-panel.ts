@@ -521,7 +521,7 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
     }
 
     private pushState(): void {
-        if (!this.view) return;
+        if (!this.view?.visible) return;
         this.view.webview.postMessage({ type: 'state', state: this.buildState() });
     }
 

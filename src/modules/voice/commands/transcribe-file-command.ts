@@ -34,6 +34,7 @@ export function registerTranscribeFileCommand(deps: CommandDeps): vscode.Disposa
             vscode.window.showInformationMessage('Open a folder to use voice features.');
             return;
         }
+        const transcriptStore = getTranscriptStore();
 
         const picked = await vscode.window.showOpenDialog({
             canSelectMany: false,
@@ -52,7 +53,7 @@ export function registerTranscribeFileCommand(deps: CommandDeps): vscode.Disposa
         const vocabulary = loadVocabularyFromFile(vocabularyFile(folder));
         const initialPrompt = buildInitialPrompt(vocabulary);
 
-        const existing = await getTranscriptStore().list();
+        const existing = await transcriptStore.list();
         const duplicate = existing.find(item => item.sourceName === sourceName);
         if (duplicate) {
             const answer = await vscode.window.showWarningMessage(
@@ -133,7 +134,7 @@ export function registerTranscribeFileCommand(deps: CommandDeps): vscode.Disposa
             });
 
             await atomicWrite(outputPath, markdown);
-            getTranscriptStore().refresh();
+            transcriptStore.refresh();
             extensionLog.appendLine(`[Transcribe] Saved ${outputPath}`);
 
             const choice = await vscode.window.showInformationMessage(

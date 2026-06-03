@@ -30,7 +30,7 @@ export interface TimerStateChange {
 export class TimerService implements vscode.Disposable {
     private dayStore: DayStore | undefined;
     private readonly tick: TickService;
-    private readonly tickIntervalSec: number;
+    private tickIntervalSec: number;
     private activeSlug: string | null = null;
     private readonly _onChange = new vscode.EventEmitter<TimerStateChange>();
     public readonly onChange = this._onChange.event;
@@ -97,8 +97,7 @@ export class TimerService implements vscode.Disposable {
             : slug;
         await this.context.workspaceState.update(ACTIVE_SLUG_STATE, storedValue);
 
-        const today = localDateKey(new Date());
-        await dayStore.recomputeTotal(userKey, today, slug);
+        await dayStore.recomputeTotalsAllDays(userKey, slug);
         await dayStore.flush();
 
         if (!this.tick.isRunning()) {
@@ -160,6 +159,11 @@ export class TimerService implements vscode.Disposable {
         }
     }
 
+    public reconfigure(tickIntervalSec: number, flushIntervalSec: number): void {
+        this.tickIntervalSec = tickIntervalSec;
+        this.tick.reconfigure(tickIntervalSec, flushIntervalSec);
+    }
+
     private async stopInternal(emit: boolean): Promise<void> {
         const slug = this.activeSlug;
         this.activeSlug = null;
@@ -169,8 +173,7 @@ export class TimerService implements vscode.Disposable {
             const userKey = this.identity.get();
             const dayStore = this.requireDayStore();
             if (userKey && dayStore) {
-                const today = localDateKey(new Date());
-                await dayStore.recomputeTotal(userKey, today, slug);
+                await dayStore.recomputeTotalsAllDays(userKey, slug);
                 await dayStore.flush();
                 if (emit) {
                     const total = await this.sumTotal(userKey, slug);

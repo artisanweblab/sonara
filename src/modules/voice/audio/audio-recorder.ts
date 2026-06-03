@@ -71,6 +71,15 @@ export class AudioRecorder implements vscode.Disposable {
         });
 
         this.process.on('error', (err) => {
+            if (this._state === 'finishing' || this._state === 'processing') {
+                // stop()/stopStreaming() is already in progress; stopProcess() will
+                // resolve via the 'exit' event that follows 'error'. Do not cleanup
+                // here or we would reset state from under the active stop flow.
+                vscode.window.showErrorMessage(
+                    `Recorder error during stop (${this.backend.id}): ${err.message}`
+                );
+                return;
+            }
             this.cleanup();
             vscode.window.showErrorMessage(
                 `Failed to start recorder (${this.backend.id}): ${err.message}`
@@ -151,6 +160,13 @@ export class AudioRecorder implements vscode.Disposable {
         });
 
         this.process.on('error', (err) => {
+            if (this._state === 'finishing' || this._state === 'processing') {
+                // stopStreaming() is already in progress; let it complete via 'exit'.
+                vscode.window.showErrorMessage(
+                    `Recorder error during stop (${this.backend.id}): ${err.message}`
+                );
+                return;
+            }
             this.cleanup();
             vscode.window.showErrorMessage(
                 `Failed to start recorder (${this.backend.id}): ${err.message}`

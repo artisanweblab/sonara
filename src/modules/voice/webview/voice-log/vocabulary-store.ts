@@ -5,10 +5,12 @@ export const VOCABULARY_FILE = 'vocabulary.md';
 const MAX_WORDS = 150;
 
 export function loadVocabularyFromFile(filePath: string): string[] {
-    if (!fs.existsSync(filePath)) {
+    let content: string;
+    try {
+        content = fs.readFileSync(filePath, 'utf8');
+    } catch {
         return [];
     }
-    const content = fs.readFileSync(filePath, 'utf8');
     const terms: string[] = [];
     for (const rawLine of content.split('\n')) {
         const line = rawLine.trim();

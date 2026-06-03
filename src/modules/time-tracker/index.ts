@@ -17,7 +17,7 @@ export async function registerTimeTrackerModule(
     const tickIntervalSec = config.get<number>('tickIntervalSec', 15);
     const flushIntervalSec = config.get<number>('flushIntervalSec', 60);
 
-    const identity = new IdentityService(context.globalState);
+    const identity = new IdentityService(context.globalState, activeProject);
     const timer = new TimerService(
         context,
         identity,
@@ -27,6 +27,21 @@ export async function registerTimeTrackerModule(
         flushIntervalSec,
     );
     context.subscriptions.push(timer);
+
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(event => {
+            if (
+                event.affectsConfiguration('sonara.timeTracker.tickIntervalSec') ||
+                event.affectsConfiguration('sonara.timeTracker.flushIntervalSec')
+            ) {
+                const updated = vscode.workspace.getConfiguration('sonara.timeTracker');
+                timer.reconfigure(
+                    updated.get<number>('tickIntervalSec', 15),
+                    updated.get<number>('flushIntervalSec', 60),
+                );
+            }
+        }),
+    );
 
     tasksPanel.attachTimerService(timer);
 

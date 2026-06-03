@@ -64,7 +64,15 @@ export function registerAudioInputCommands(deps: CommandDeps): void {
             }
             await config.update('audioInput', picked.deviceId, vscode.ConfigurationTarget.Global);
             const label = picked.deviceId ? picked.label : 'System default';
-            vscode.window.showInformationMessage(`Audio input set to "${label}".`);
+
+            const isRecordingActive = recorder.state !== 'idle';
+            if (isRecordingActive) {
+                vscode.window.showWarningMessage(
+                    `Audio input will be set to "${label}" starting from the next recording.`
+                );
+            } else {
+                vscode.window.showInformationMessage(`Audio input set to "${label}".`);
+            }
         }),
     );
 }

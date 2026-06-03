@@ -213,21 +213,45 @@ export function registerModelCommands(deps: CommandDeps): void {
 
             const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
             const currentModel = config.get<string>('model', VOICE_DEFAULTS.model);
+
+            // Step 1: download the requested model by loading it.
             try {
                 await server.runWithModelLoadingProgress(
                     `Downloading model "${picked.label}"...`,
                     () => reloadModelFromConfig(apiClient, config, { model: picked.label }),
                 );
-                if (currentModel !== picked.label) {
+            } catch (err) {
+                // Download failed - server still has whatever model was active
+                // before (currentModel), because the reload never completed.
+                vscode.window.showErrorMessage(
+                    `Download failed: ${err}. Active model remains "${currentModel}".`
+                );
+                return;
+            }
+
+            // Step 2: restore the original model when the user downloaded a
+            // different one than what is configured.
+            if (currentModel !== picked.label) {
+                try {
                     await server.runWithModelLoadingProgress(
                         `Restoring model "${currentModel}"...`,
                         () => reloadModelFromConfig(apiClient, config, { model: currentModel }),
                     );
+                } catch (restoreErr) {
+                    // Restore failed - server is now loaded with the downloaded
+                    // model (picked.label), not the previously active one.
+                    // Sync the config to reflect the actual server state so the
+                    // UI and future operations are not desynced.
+                    await config.update('model', picked.label, vscode.ConfigurationTarget.Global);
+                    vscode.window.showWarningMessage(
+                        `Model "${picked.label}" downloaded, but restoring "${currentModel}" failed: ` +
+                        `${restoreErr}. Active model is now "${picked.label}" - config updated to match.`
+                    );
+                    return;
                 }
-                vscode.window.showInformationMessage(`Model "${picked.label}" downloaded.`);
-            } catch (err) {
-                vscode.window.showErrorMessage(`Download failed: ${err}`);
             }
+
+            vscode.window.showInformationMessage(`Model "${picked.label}" downloaded.`);
         }),
     );
 }

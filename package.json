@@ -328,7 +328,32 @@
         "sonara.voice.language": {
           "type": "string",
           "default": "auto",
-          "enum": ["auto", "ru", "uk", "en", "de", "fr", "es", "it", "pl"],
+          "enum": ["auto", "en", "uk", "de", "fr", "es", "it", "pl", "pt", "nl", "sv", "cs", "sk", "ro", "hu", "bg", "el", "zh", "ja", "ko", "hi", "be", "ru"],
+          "enumDescriptions": [
+            "Auto-detect",
+            "English",
+            "Ukrainian (Українська)",
+            "German (Deutsch)",
+            "French (Français)",
+            "Spanish (Español)",
+            "Italian (Italiano)",
+            "Polish (Polski)",
+            "Portuguese (Português)",
+            "Dutch (Nederlands)",
+            "Swedish (Svenska)",
+            "Czech (Čeština)",
+            "Slovak (Slovenčina)",
+            "Romanian (Română)",
+            "Hungarian (Magyar)",
+            "Bulgarian (Български)",
+            "Greek (Ελληνικά)",
+            "Chinese (中文)",
+            "Japanese (日本語)",
+            "Korean (한국어)",
+            "Hindi (हिन्दी)",
+            "Belarusian (Беларуская)",
+            "Russian (Русский)"
+          ],
           "description": "Transcription language (auto = detect)"
         },
         "sonara.voice.computeType": {

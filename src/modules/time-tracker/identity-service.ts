@@ -1,10 +1,14 @@
 import * as vscode from 'vscode';
 import { exec } from 'child_process';
+import { ActiveProject } from '../../shared/active-project';
 
 const USER_KEY_STATE = 'sonara.timeTracker.userKey';
 
 export class IdentityService {
-    public constructor(private readonly state: vscode.Memento) {}
+    public constructor(
+        private readonly state: vscode.Memento,
+        private readonly activeProject: ActiveProject,
+    ) {}
 
     public get(): string | undefined {
         return this.state.get<string>(USER_KEY_STATE);
@@ -48,6 +52,9 @@ export class IdentityService {
         }
         const key = this.normalize(raw);
         if (!key) {
+            void vscode.window.showErrorMessage(
+                'Sonara Time Tracker: the entered name produced an empty identifier. Please use a name with at least one letter or digit (Latin preferred).',
+            );
             return undefined;
         }
         await this.state.update(USER_KEY_STATE, key);
@@ -55,15 +62,19 @@ export class IdentityService {
     }
 
     private normalize(value: string): string {
+        // Allow Unicode letters and digits so non-ASCII names (e.g. Cyrillic) are
+        // preserved as-is rather than being silently collapsed to an empty string.
+        // Only characters that are unsafe in file-system paths are replaced with '-'.
         const trimmed = value.trim().toLowerCase();
-        const replaced = trimmed.replace(/[^a-z0-9._-]+/g, '-');
+        const replaced = trimmed.replace(/[^\p{L}\p{N}._-]+/gu, '-');
         const collapsed = replaced.replace(/-+/g, '-').replace(/^-+|-+$/g, '');
         return collapsed;
     }
 
     private readGitEmail(): Promise<string | undefined> {
         return new Promise(resolve => {
-            const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            const folder = this.activeProject.get();
+            const cwd = folder?.uri.fsPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             exec('git config user.email', { cwd }, (err, stdout) => {
                 if (err) {
                     resolve(undefined);

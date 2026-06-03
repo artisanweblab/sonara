@@ -176,6 +176,7 @@ ${buildIconsScriptDecl()}
 
     function startDraftTicker() {
         if (draftTickInterval) return;
+        if (document.visibilityState === 'hidden') return;
         draftTickInterval = setInterval(function() {
             const card = document.getElementById('draftCard');
             if (!card || !currentDraft) {
@@ -192,6 +193,14 @@ ${buildIconsScriptDecl()}
             draftTickInterval = null;
         }
     }
+
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'hidden') {
+            stopDraftTicker();
+        } else if (currentDraft) {
+            startDraftTicker();
+        }
+    });
 
     function buildDraftCard() {
         const card = document.createElement('div');

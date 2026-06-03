@@ -1,4 +1,5 @@
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { atomicWrite } from '../../../../shared/fs-utils';
@@ -26,9 +27,14 @@ export class LogStore implements vscode.Disposable {
     readonly onRecordDeleted = this.onRecordDeletedEmitter.event;
     readonly onDraftChanged = this.onDraftChangedEmitter.event;
 
-    private fileWatcher: fs.FSWatcher | null = null;
+    private fileWatcher: fsSync.FSWatcher | null = null;
     private draft: DraftRecord | null = null;
     private writeChain: Promise<void> = Promise.resolve();
+
+    // In-memory cache. null means not yet loaded or invalidated.
+    private cachedRecords: VoiceRecord[] | null = null;
+    // Broken (non-JSON) raw lines preserved across rewrites.
+    private cachedBrokenLines: string[] = [];
 
     constructor(public readonly logPath: string | null) {}
 
@@ -46,9 +52,14 @@ export class LogStore implements vscode.Disposable {
             if (!this.logPath) {
                 return;
             }
-            fs.mkdirSync(path.dirname(this.logPath), { recursive: true });
+            await fs.mkdir(path.dirname(this.logPath), { recursive: true });
             const line = JSON.stringify(record) + '\n';
-            fs.appendFileSync(this.logPath, line, { encoding: 'utf8', flag: 'a' });
+            await fs.appendFile(this.logPath, line, { encoding: 'utf8' });
+            // Append to cache if already populated; otherwise leave null so the
+            // next list() call re-reads the file.
+            if (this.cachedRecords !== null) {
+                this.cachedRecords = [record, ...this.cachedRecords];
+            }
             this.onRecordAddedEmitter.fire(record);
             await this.enforceLimitInner();
         });
@@ -88,12 +99,31 @@ export class LogStore implements vscode.Disposable {
     }
 
     async list(): Promise<VoiceRecord[]> {
-        if (!this.logPath || !fs.existsSync(this.logPath)) {
-            return [];
+        if (this.cachedRecords !== null) {
+            return this.cachedRecords;
         }
 
-        const content = fs.readFileSync(this.logPath, 'utf8');
+        if (!this.logPath) {
+            this.cachedRecords = [];
+            this.cachedBrokenLines = [];
+            return this.cachedRecords;
+        }
+
+        let content: string;
+        try {
+            content = await fs.readFile(this.logPath, 'utf8');
+        } catch (err: unknown) {
+            const code = (err as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT') {
+                this.cachedRecords = [];
+                this.cachedBrokenLines = [];
+                return this.cachedRecords;
+            }
+            throw err;
+        }
+
         const records: VoiceRecord[] = [];
+        const brokenLines: string[] = [];
 
         for (const line of content.split('\n')) {
             const trimmed = line.trim();
@@ -103,12 +133,14 @@ export class LogStore implements vscode.Disposable {
             try {
                 records.push(JSON.parse(trimmed) as VoiceRecord);
             } catch {
-                // Skip malformed lines
+                brokenLines.push(line);
             }
         }
 
         records.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-        return records;
+        this.cachedRecords = records;
+        this.cachedBrokenLines = brokenLines;
+        return this.cachedRecords;
     }
 
     async search(query: string): Promise<VoiceRecord[]> {
@@ -119,10 +151,16 @@ export class LogStore implements vscode.Disposable {
 
     async clear(): Promise<void> {
         const op = this.writeChain.then(async () => {
-            if (!this.logPath || !fs.existsSync(this.logPath)) {
+            if (!this.logPath) {
                 return;
             }
-            const existing = await this.list();
+            let existing: VoiceRecord[] = [];
+            try {
+                existing = await this.list();
+            } catch {
+                // best-effort: fire events for what we know
+            }
+            this.invalidateCache();
             await atomicWrite(this.logPath, '');
             for (const record of existing) {
                 this.onRecordDeletedEmitter.fire(record.id);
@@ -132,12 +170,10 @@ export class LogStore implements vscode.Disposable {
         return op;
     }
 
+    // Returns the cached count synchronously. Returns 0 if cache is not yet
+    // populated (status bar will refresh on the next record event).
     get recordCount(): number {
-        if (!this.logPath || !fs.existsSync(this.logPath)) {
-            return 0;
-        }
-        const content = fs.readFileSync(this.logPath, 'utf8');
-        return content.split('\n').filter(l => l.trim()).length;
+        return this.cachedRecords?.length ?? 0;
     }
 
     // Must only be called from within a writeChain callback (already serialized).
@@ -173,8 +209,22 @@ export class LogStore implements vscode.Disposable {
             return;
         }
         // records should be in append order (oldest first)
-        const content = records.map(r => JSON.stringify(r)).join('\n') + (records.length ? '\n' : '');
-        await atomicWrite(this.logPath, content);
+        // Preserve broken lines by appending them after the valid records so
+        // they are never silently lost on a rewrite.
+        const validContent = records.map(r => JSON.stringify(r)).join('\n') + (records.length ? '\n' : '');
+        const brokenContent = this.cachedBrokenLines.length
+            ? this.cachedBrokenLines.join('\n') + '\n'
+            : '';
+        await atomicWrite(this.logPath, validContent + brokenContent);
+        // Update cache: newest-first sorted view of the written records.
+        const sorted = records.slice().sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+        this.cachedRecords = sorted;
+        // cachedBrokenLines stays as-is (they are still present in the file)
+    }
+
+    private invalidateCache(): void {
+        this.cachedRecords = null;
+        this.cachedBrokenLines = [];
     }
 
     dispose(): void {

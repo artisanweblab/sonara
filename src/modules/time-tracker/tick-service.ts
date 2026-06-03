@@ -8,11 +8,23 @@ export class TickService implements vscode.Disposable {
     private busy = false;
 
     public constructor(
-        private readonly tickIntervalSec: number,
-        private readonly flushIntervalSec: number,
+        private tickIntervalSec: number,
+        private flushIntervalSec: number,
         private readonly onTick: TickListener,
         private readonly onFlush: () => Promise<void>,
     ) {}
+
+    public reconfigure(tickIntervalSec: number, flushIntervalSec: number): void {
+        const wasRunning = this.isRunning();
+        if (wasRunning) {
+            this.stop();
+        }
+        this.tickIntervalSec = tickIntervalSec;
+        this.flushIntervalSec = flushIntervalSec;
+        if (wasRunning) {
+            this.start();
+        }
+    }
 
     public isRunning(): boolean {
         return this.timer !== undefined;

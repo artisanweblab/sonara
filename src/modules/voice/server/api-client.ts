@@ -211,22 +211,36 @@ export class ApiClient {
                     if (!trimmed) {
                         continue;
                     }
-                    const msg = JSON.parse(trimmed) as
-                        | { type: 'progress'; current_sec: number; total_sec: number }
-                        | { type: 'result'; segments: TranscribedSegment[]; language: string; duration_sec: number; processing_time_sec: number }
-                        | { type: 'error'; message: string };
+                    let msg: {
+                        type: string;
+                        current_sec?: number;
+                        total_sec?: number;
+                        segments?: TranscribedSegment[];
+                        language?: string;
+                        duration_sec?: number;
+                        processing_time_sec?: number;
+                        message?: string;
+                    };
+                    try {
+                        msg = JSON.parse(trimmed) as typeof msg;
+                    } catch {
+                        // Malformed NDJSON line - skip without treating as fatal.
+                        // A single corrupt line does not end the transcription.
+                        console.warn(`[ApiClient] transcribeFile: skipping non-JSON line: ${trimmed.slice(0, 120)}`);
+                        continue;
+                    }
 
                     if (msg.type === 'progress') {
-                        onProgress({ currentSec: msg.current_sec, totalSec: msg.total_sec });
+                        onProgress({ currentSec: msg.current_sec ?? 0, totalSec: msg.total_sec ?? 0 });
                     } else if (msg.type === 'result') {
                         finalResult = {
-                            segments: msg.segments,
-                            language: msg.language,
-                            durationSec: msg.duration_sec,
-                            processingTimeSec: msg.processing_time_sec,
+                            segments: msg.segments ?? [],
+                            language: msg.language ?? '',
+                            durationSec: msg.duration_sec ?? 0,
+                            processingTimeSec: msg.processing_time_sec ?? 0,
                         };
                     } else if (msg.type === 'error') {
-                        throw new Error(msg.message);
+                        throw new Error(msg.message ?? 'Unknown server error');
                     }
                 }
             }
@@ -362,10 +376,23 @@ export class ApiClient {
             finalReject = null;
         });
 
+        let droppedChunkCount = 0;
+
         return {
             sendAudio(pcm: Buffer): void {
                 if (ws.readyState === WebSocket.OPEN) {
                     ws.send(pcm);
+                } else {
+                    droppedChunkCount++;
+                    // Log every dropped chunk but throttle to avoid flooding: log
+                    // the first drop and then every 10th to indicate the stream is
+                    // still trying to send while the socket is not open.
+                    if (droppedChunkCount === 1 || droppedChunkCount % 10 === 0) {
+                        console.warn(
+                            `[ApiClient] sendAudio: WebSocket not OPEN (state=${ws.readyState}), ` +
+                            `dropped chunk #${droppedChunkCount} (${pcm.byteLength} bytes)`
+                        );
+                    }
                 }
             },
             onPartial(listener: (partial: StreamingPartial) => void): void {

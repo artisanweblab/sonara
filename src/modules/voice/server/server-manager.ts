@@ -300,14 +300,15 @@ export class ServerManager implements vscode.Disposable {
             const port = await this.waitForPortFile(portFile, 60000);
             this._port = port;
 
-            // Wait for /health to return ready with visible progress notification
+            // Wait for /health to return ready with visible progress notification.
+            // cancellable:true lets the user abort a stuck model download/load.
             await vscode.window.withProgress(
                 {
                     location: vscode.ProgressLocation.Notification,
                     title: `Loading model "${model}"...`,
-                    cancellable: false,
+                    cancellable: true,
                 },
-                async (progress) => {
+                async (progress, cancellationToken) => {
                     progress.report({ message: 'Waiting for server...' });
 
                     let lastPercent = 0;
@@ -342,7 +343,7 @@ export class ServerManager implements vscode.Disposable {
 
                     try {
                         // 30 minutes is enough for the 3GB large-v3 model on a slow connection.
-                        await this.waitForReady(1800000);
+                        await this.waitForReady(1800000, cancellationToken);
                     } finally {
                         progressReport = null;
                     }
@@ -428,9 +429,15 @@ export class ServerManager implements vscode.Disposable {
         throw new Error('Timed out waiting for server port file');
     }
 
-    private async waitForReady(timeoutMs: number): Promise<void> {
+    private async waitForReady(
+        timeoutMs: number,
+        cancellationToken?: vscode.CancellationToken,
+    ): Promise<void> {
         const deadline = Date.now() + timeoutMs;
         while (Date.now() < deadline) {
+            if (cancellationToken?.isCancellationRequested) {
+                throw new Error('Server startup cancelled by user');
+            }
             try {
                 const status = await this.fetchHealth();
                 if (status === 'ready') {
