@@ -1,5 +1,37 @@
 import WebSocket from 'ws';
 
+export class CudaOomError extends Error {
+    readonly errorCode = 'cuda_oom';
+
+    constructor(message: string) {
+        super(message);
+        this.name = 'CudaOomError';
+    }
+}
+
+function extractCudaOomMessage(rawBody: string): string | null {
+    if (!rawBody) {
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(rawBody) as { detail?: unknown };
+        const detail = parsed.detail;
+        if (detail && typeof detail === 'object') {
+            const obj = detail as { error_code?: unknown; message?: unknown };
+            if (obj.error_code === 'cuda_oom') {
+                return typeof obj.message === 'string' ? obj.message : 'CUDA out of memory';
+            }
+        }
+    } catch {
+        // body is not JSON - fall through
+    }
+    // Final heuristic on the raw body, just in case FastAPI wrapped the dict in a string.
+    if (/cuda_oom|CUBLAS_STATUS_ALLOC_FAILED|CUDA out of memory/i.test(rawBody)) {
+        return rawBody;
+    }
+    return null;
+}
+
 export interface TranscribeResult {
     text: string;
     language: string;
@@ -104,6 +136,7 @@ export class ApiClient {
         language: string = 'auto',
         vadFilter: boolean = true,
         initialPrompt: string | null = null,
+        deviceOverride: 'cpu' | null = null,
     ): Promise<TranscribeResult> {
         const formData = new FormData();
         const arrayBuffer: ArrayBuffer = wavBuffer.buffer instanceof ArrayBuffer
@@ -118,22 +151,33 @@ export class ApiClient {
         if (initialPrompt) {
             formData.append('initial_prompt', initialPrompt);
         }
+        if (deviceOverride) {
+            formData.append('device_override', deviceOverride);
+        }
 
+        // CPU fallback can be much slower than GPU; widen the timeout when override is in play.
+        const timeoutMs = deviceOverride === 'cpu' ? 600000 : 60000;
         let response: Response;
         try {
             response = await fetch(`${this.baseUrl}/transcribe`, {
                 method: 'POST',
                 headers: { 'X-Extension-Token': this.token },
                 body: formData,
-                signal: AbortSignal.timeout(60000),
+                signal: AbortSignal.timeout(timeoutMs),
             });
         } catch (err) {
             wrapNetworkError(err);
         }
 
         if (!response.ok) {
-            const text = await response.text().catch(() => '');
-            throw new Error(`Transcribe failed: HTTP ${response.status} - ${text}`);
+            const rawText = await response.text().catch(() => '');
+            if (response.status === 507 || response.status === 500) {
+                const oomMessage = extractCudaOomMessage(rawText);
+                if (oomMessage !== null) {
+                    throw new CudaOomError(oomMessage);
+                }
+            }
+            throw new Error(`Transcribe failed: HTTP ${response.status} - ${rawText}`);
         }
 
         const body = await response.json() as {
@@ -339,6 +383,7 @@ export class ApiClient {
                 text?: string;
                 duration_sec?: number;
                 message?: string;
+                error_code?: string;
             };
             try {
                 msg = JSON.parse(text);
@@ -358,7 +403,11 @@ export class ApiClient {
                 finalResolve = null;
                 finalReject = null;
             } else if (msg.type === 'error') {
-                finalReject?.(new Error(msg.message ?? 'Streaming error'));
+                const errorMessage = msg.message ?? 'Streaming error';
+                const errorToThrow = msg.error_code === 'cuda_oom'
+                    ? new CudaOomError(errorMessage)
+                    : new Error(errorMessage);
+                finalReject?.(errorToThrow);
                 finalResolve = null;
                 finalReject = null;
             }

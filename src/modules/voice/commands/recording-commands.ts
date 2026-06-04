@@ -3,12 +3,13 @@ import * as crypto from 'crypto';
 
 import { CommandDeps } from './types';
 import { VoiceRecord } from '../webview/voice-log/types';
-import { StreamingSession } from '../server/api-client';
+import { CudaOomError, StreamingSession, TranscribeResult } from '../server/api-client';
 import { DraftMode, DraftRecord, LogStore } from '../webview/voice-log/log-store';
 import { buildInitialPrompt, loadVocabularyFromFile } from '../webview/voice-log/vocabulary-store';
 import { encodePcmToWav } from '../audio/wav-encoder';
-import { VOICE_CONFIG_SECTION, VOICE_DEFAULTS } from '../constants';
+import { VOICE_CONFIG_SECTION, VOICE_DEFAULTS, type WhisperModel } from '../constants';
 import { voiceLogDir, vocabularyFile, ensureDir } from '../../../shared/project-layout';
+import { recoverFromCudaOom } from './cuda-oom-recovery';
 
 type StreamingModeValue = 'off' | 'on' | 'adaptive';
 
@@ -67,6 +68,16 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
     // Max PCM bytes held in adaptiveBuffer before forcing an upgrade (≈90s @ 16kHz/16bit/mono).
     const ADAPTIVE_BUFFER_BYTE_LIMIT = 3 * 1024 * 1024;
 
+    // Max PCM bytes mirrored from streaming chunks for OOM recovery (≈90s @ 16kHz/16bit/mono).
+    // Exceeding the limit causes the mirror to stop accumulating; recovery becomes best-effort.
+    const STREAMING_PCM_MIRROR_BYTE_LIMIT = 3 * 1024 * 1024;
+
+    // Client-side mirror of every PCM chunk sent over the streaming WS, kept so that we can
+    // rebuild a WAV buffer and run the OOM recovery flow if streaming OOMs mid-session.
+    let streamingPcmMirror: Buffer[] = [];
+    let streamingPcmMirrorBytes: number = 0;
+    let streamingInitialPrompt: string | null = null;
+
     // Snapshotted at recording start - writes always go to origin folder.
     let recordingLogStore: LogStore | null = null;
     // Vocabulary snapshotted at start so stopRecording uses the project that was
@@ -102,6 +113,75 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
 
     function clearDraft(): void {
         recordingLogStore?.setDraft(null);
+    }
+
+    /**
+     * Run a transcribe call. If the server reports CUDA OOM, show the recovery picker
+     * (CPU fallback / smaller model / cancel) and return the recovered result.
+     * Returns null when the user cancels the recovery picker.
+     * Any non-OOM error and recovery-time error is rethrown.
+     */
+    async function transcribeWithOomRecovery(
+        wavBuffer: Buffer,
+        language: string,
+        vadFilter: boolean,
+        initialPrompt: string | null,
+    ): Promise<TranscribeResult | null> {
+        try {
+            return await apiClient.transcribe(wavBuffer, language, vadFilter, initialPrompt);
+        } catch (err) {
+            if (!(err instanceof CudaOomError)) {
+                throw err;
+            }
+            extensionLog.appendLine(`[CudaOomRecovery] OOM caught: ${err.message}`);
+            const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
+            const currentModel = config.get<WhisperModel>('model', VOICE_DEFAULTS.model);
+            return recoverFromCudaOom({
+                apiClient,
+                wavBuffer,
+                currentModel,
+                language,
+                vadFilter,
+                initialPrompt,
+                server,
+                extensionLog,
+            });
+        }
+    }
+
+    /**
+     * Persist a transcribed recording to the log store and optionally show a notification.
+     * Shared by the normal streaming finalize path and the OOM recovery fallback path.
+     */
+    async function persistTranscribedRecord(
+        id: string,
+        timestampMs: number,
+        text: string,
+        language: string,
+        durationSec: number,
+    ): Promise<void> {
+        const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
+        const record: VoiceRecord = {
+            id,
+            timestamp: new Date(timestampMs).toISOString(),
+            text,
+            language,
+            duration_sec: durationSec,
+            model: config.get<string>('model', VOICE_DEFAULTS.model),
+            tags: [],
+            copied: false,
+        };
+        await recordingLogStore?.add(record);
+
+        const showNotification = vscode.workspace
+            .getConfiguration('sonara.voice.log')
+            .get<boolean>('showNotificationOnTranscribe', true);
+        if (showNotification) {
+            const previewLimit = 50;
+            const preview = text.slice(0, previewLimit) +
+                (text.length > previewLimit ? '...' : '');
+            vscode.window.showInformationMessage(`Transcribed: "${preview}"`);
+        }
     }
 
     function publishDraft(mode: DraftMode, confirmed: string, pending: string): void {
@@ -204,6 +284,9 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
         streamingDraftId = crypto.randomUUID();
         streamingStartMs = Date.now();
         streamingFinalizing = false;
+        streamingPcmMirror = [];
+        streamingPcmMirrorBytes = 0;
+        streamingInitialPrompt = initialPrompt;
 
         try {
             streamingSession = await apiClient.openTranscribeStream(
@@ -229,6 +312,11 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
                 chunkCount++;
                 if (chunkCount === 1 || chunkCount % 20 === 0) {
                     extensionLog.appendLine(`[Streaming] audio chunk #${chunkCount}, ${chunk.length} bytes`);
+                }
+                // Mirror chunk for OOM recovery, up to the byte limit.
+                if (streamingPcmMirrorBytes < STREAMING_PCM_MIRROR_BYTE_LIMIT) {
+                    streamingPcmMirror.push(chunk);
+                    streamingPcmMirrorBytes += chunk.length;
                 }
                 streamingSession?.sendAudio(chunk);
             });
@@ -335,6 +423,14 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
                 headText = headResult.text.trim();
                 extensionLog.appendLine(`[Adaptive] head transcribed, length=${headText.length}`);
             } catch (err) {
+                if (err instanceof CudaOomError) {
+                    extensionLog.appendLine(
+                        '[Adaptive] head transcribe OOM, will recover at finalize; skipping streaming upgrade',
+                    );
+                    // Put chunks back so finalize-as-classic sees them again.
+                    adaptiveBuffer = headChunks.concat(adaptiveBuffer);
+                    return;
+                }
                 extensionLog.appendLine(`[Adaptive] head transcribe failed, will fall back to streaming-only: ${err}`);
             }
         }
@@ -415,26 +511,13 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             if (!trimmed) {
                 return;
             }
-            const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
-            const record: VoiceRecord = {
-                id: streamingDraftId,
-                timestamp: new Date(streamingStartMs).toISOString(),
-                text: trimmed,
-                language: streamingLanguage,
-                duration_sec: stopResult.durationSec,
-                model: config.get<string>('model', VOICE_DEFAULTS.model),
-                tags: [],
-                copied: false,
-            };
-            await recordingLogStore?.add(record);
-            const showNotification = vscode.workspace
-                .getConfiguration('sonara.voice.log')
-                .get<boolean>('showNotificationOnTranscribe', true);
-            if (showNotification) {
-                const previewLimit = 50;
-                const preview = trimmed.slice(0, previewLimit) + (trimmed.length > previewLimit ? '...' : '');
-                vscode.window.showInformationMessage(`Transcribed: "${preview}"`);
-            }
+            await persistTranscribedRecord(
+                streamingDraftId,
+                streamingStartMs,
+                trimmed,
+                streamingLanguage,
+                stopResult.durationSec,
+            );
             return;
         }
 
@@ -484,28 +567,13 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             return;
         }
 
-        const record: VoiceRecord = {
-            id: streamingDraftId,
-            timestamp: new Date(streamingStartMs).toISOString(),
-            text: combinedText,
-            language: streamingLanguage,
-            duration_sec: stopResult.durationSec,
-            model: config.get<string>('model', VOICE_DEFAULTS.model),
-            tags: [],
-            copied: false,
-        };
-
-        await recordingLogStore?.add(record);
-
-        const showNotification = vscode.workspace
-            .getConfiguration('sonara.voice.log')
-            .get<boolean>('showNotificationOnTranscribe', true);
-        if (showNotification) {
-            const previewLimit = 50;
-            const preview = combinedText.slice(0, previewLimit) +
-                (combinedText.length > previewLimit ? '...' : '');
-            vscode.window.showInformationMessage(`Transcribed: "${preview}"`);
-        }
+        await persistTranscribedRecord(
+            streamingDraftId,
+            streamingStartMs,
+            combinedText,
+            streamingLanguage,
+            stopResult.durationSec,
+        );
     }
 
     async function finalizeStreamingFlow(headText: string = ''): Promise<void> {
@@ -541,6 +609,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
         setTranscribing(true);
         let finalText = streamingFinalText;
         let finalizeErrored = false;
+        let oomDuringFinalize = false;
         try {
             const result = await session.finalize();
             const tailText = result.text || '';
@@ -549,9 +618,14 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
                 : (tailText || finalText);
             extensionLog.appendLine(`[Streaming] final text length=${finalText.length}`);
         } catch (err) {
-            extensionLog.appendLine(`[Streaming] finalize error: ${err}`);
-            finalizeErrored = true;
-            // finalText retains the last known streamingFinalText (partials accumulated so far)
+            if (err instanceof CudaOomError) {
+                extensionLog.appendLine('[Streaming] finalize CUDA OOM, will degrade to classic recovery');
+                oomDuringFinalize = true;
+            } else {
+                extensionLog.appendLine(`[Streaming] finalize error: ${err}`);
+                finalizeErrored = true;
+                // finalText retains the last known streamingFinalText (partials accumulated so far)
+            }
         } finally {
             setTranscribing(false);
         }
@@ -564,6 +638,65 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
         }
 
         streamingSession = null;
+
+        if (oomDuringFinalize) {
+            // Rebuild WAV from the client-side PCM mirror and run the recovery picker.
+            const mirroredChunks = streamingPcmMirror;
+            const promptForRecovery = streamingInitialPrompt;
+            streamingPcmMirror = [];
+            streamingPcmMirrorBytes = 0;
+            streamingInitialPrompt = null;
+
+            if (mirroredChunks.length === 0) {
+                clearDraft();
+                vscode.window.showErrorMessage(
+                    'GPU out of memory and no buffered audio is available to retry. The recording is lost.',
+                );
+                return;
+            }
+
+            const wavBuffer = encodePcmToWav(mirroredChunks);
+            const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
+
+            setTranscribing(true);
+            let recovered: TranscribeResult | null = null;
+            try {
+                recovered = await transcribeWithOomRecovery(
+                    wavBuffer,
+                    config.get<string>('language', VOICE_DEFAULTS.language),
+                    config.get<boolean>('vadFilter', VOICE_DEFAULTS.vadFilter),
+                    promptForRecovery,
+                );
+            } catch (err) {
+                clearDraft();
+                vscode.window.showErrorMessage(`Transcription failed: ${err}`);
+                return;
+            } finally {
+                setTranscribing(false);
+            }
+
+            clearDraft();
+            if (!recovered) {
+                // User cancelled the OOM recovery picker.
+                return;
+            }
+            if (!recovered.text.trim()) {
+                vscode.window.showInformationMessage('No speech detected.');
+                return;
+            }
+            await persistTranscribedRecord(
+                streamingDraftId,
+                streamingStartMs,
+                recovered.text,
+                recovered.language || streamingLanguage,
+                stopResult.durationSec,
+            );
+            return;
+        }
+
+        streamingPcmMirror = [];
+        streamingPcmMirrorBytes = 0;
+        streamingInitialPrompt = null;
         clearDraft();
 
         const trimmed = finalText.trim();
@@ -577,28 +710,13 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             );
         }
 
-        const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
-        const record: VoiceRecord = {
-            id: streamingDraftId,
-            timestamp: new Date(streamingStartMs).toISOString(),
-            text: trimmed,
-            language: streamingLanguage,
-            duration_sec: stopResult.durationSec,
-            model: config.get<string>('model', VOICE_DEFAULTS.model),
-            tags: [],
-            copied: false,
-        };
-
-        await recordingLogStore?.add(record);
-
-        const showNotification = vscode.workspace
-            .getConfiguration('sonara.voice.log')
-            .get<boolean>('showNotificationOnTranscribe', true);
-        if (showNotification) {
-            const previewLimit = 50;
-            const preview = trimmed.slice(0, previewLimit) + (trimmed.length > previewLimit ? '...' : '');
-            vscode.window.showInformationMessage(`Transcribed: "${preview}"`);
-        }
+        await persistTranscribedRecord(
+            streamingDraftId,
+            streamingStartMs,
+            trimmed,
+            streamingLanguage,
+            stopResult.durationSec,
+        );
     }
 
     async function finalizeAdaptiveFlow(): Promise<void> {
@@ -648,6 +766,9 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
         adaptiveUpgradePromise = null;
         adaptiveHeadText = '';
         streamingFinalizing = false;
+        streamingPcmMirror = [];
+        streamingPcmMirrorBytes = 0;
+        streamingInitialPrompt = null;
 
         if (streamingSession) {
             streamingSession.cancel();
@@ -833,9 +954,9 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             const initialPrompt = buildInitialPrompt(vocabulary);
 
             setTranscribing(true);
-            let transcribeResult;
+            let transcribeResult: TranscribeResult | null = null;
             try {
-                transcribeResult = await apiClient.transcribe(
+                transcribeResult = await transcribeWithOomRecovery(
                     result.wavBuffer,
                     config.get<string>('language', VOICE_DEFAULTS.language),
                     config.get<boolean>('vadFilter', VOICE_DEFAULTS.vadFilter),
@@ -851,6 +972,11 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
 
             clearDraft();
 
+            if (!transcribeResult) {
+                // User cancelled the OOM recovery picker.
+                return;
+            }
+
             if (!transcribeResult.text.trim()) {
                 vscode.window.showWarningMessage(
                     'Recorded only silence. Check that your microphone is on, not muted, and selected as the active input.'
@@ -858,29 +984,13 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
                 return;
             }
 
-            const record: VoiceRecord = {
-                id: streamingDraftId || crypto.randomUUID(),
-                timestamp: new Date(streamingStartMs || Date.now()).toISOString(),
-                text: transcribeResult.text,
-                language: transcribeResult.language,
-                duration_sec: transcribeResult.durationSec,
-                model: config.get<string>('model', VOICE_DEFAULTS.model),
-                tags: [],
-                copied: false,
-            };
-
-            await recordingLogStore?.add(record);
-
-            const showNotification = vscode.workspace
-                .getConfiguration('sonara.voice.log')
-                .get<boolean>('showNotificationOnTranscribe', true);
-
-            if (showNotification) {
-                const previewLimit = 50;
-                const preview = transcribeResult.text.slice(0, previewLimit) +
-                    (transcribeResult.text.length > previewLimit ? '...' : '');
-                vscode.window.showInformationMessage(`Transcribed: "${preview}"`);
-            }
+            await persistTranscribedRecord(
+                streamingDraftId || crypto.randomUUID(),
+                streamingStartMs || Date.now(),
+                transcribeResult.text,
+                transcribeResult.language,
+                transcribeResult.durationSec,
+            );
         }),
     );
 
