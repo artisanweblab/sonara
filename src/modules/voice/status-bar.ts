@@ -6,6 +6,7 @@ import { TranscribingState } from './commands/recording-commands';
 
 export class StatusBar implements vscode.Disposable {
     private readonly item: vscode.StatusBarItem;
+    private readonly powerItem: vscode.StatusBarItem;
     private readonly disposables: vscode.Disposable[] = [];
     private logStore: LogStore;
     private logStoreSubscriptions: vscode.Disposable[] = [];
@@ -17,19 +18,39 @@ export class StatusBar implements vscode.Disposable {
         logStore: LogStore,
     ) {
         this.logStore = logStore;
+
+        // Left-aligned: voice server power and recording are tool actions, which by
+        // VS Code convention belong on the left (git/problems/actions), not the right
+        // (active-file info). Adjacent priorities keep the two items grouped; a value
+        // below the git/problems cluster places them in the clean left-center area.
+        this.powerItem = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Left,
+            50
+        );
+        this.powerItem.command = 'sonara.voice.toggleServer';
+        this.powerItem.show();
+
         this.item = vscode.window.createStatusBarItem(
-            vscode.StatusBarAlignment.Right,
-            100
+            vscode.StatusBarAlignment.Left,
+            49
         );
         this.item.command = 'sonara.voice.toggleRecording';
         this.item.show();
 
         this.disposables.push(
-            server.onStatusChanged(() => this.update()),
+            server.onStatusChanged(() => {
+                this.updatePowerItem();
+                this.update();
+            }),
+            server.onEnabledChanged(() => {
+                this.updatePowerItem();
+                this.update();
+            }),
             recorder.onStateChanged(() => this.update()),
         );
 
         this.subscribeToLogStore();
+        this.updatePowerItem();
         this.update();
     }
 
@@ -52,6 +73,44 @@ export class StatusBar implements vscode.Disposable {
             this.logStore.onRecordAdded(() => this.update()),
             this.logStore.onRecordDeleted(() => this.update()),
         );
+    }
+
+    private updatePowerItem(): void {
+        const enabled = this.server.isEnabled();
+        const serverStatus = this.server.status;
+
+        if (!enabled) {
+            this.powerItem.text = '$(circle-slash) Voice: Off';
+            this.powerItem.tooltip = 'Voice server is off - click to turn on';
+            this.powerItem.backgroundColor = undefined;
+            return;
+        }
+
+        switch (serverStatus) {
+            case 'ready':
+                this.powerItem.text = '$(zap) Voice: On';
+                this.powerItem.tooltip = 'Voice server running - click to turn off';
+                this.powerItem.backgroundColor = undefined;
+                break;
+
+            case 'starting':
+                this.powerItem.text = '$(loading~spin) Voice: Starting';
+                this.powerItem.tooltip = 'Voice server starting';
+                this.powerItem.backgroundColor = undefined;
+                break;
+
+            case 'stopped':
+                this.powerItem.text = '$(circle-outline) Voice: On (idle)';
+                this.powerItem.tooltip = 'Voice server armed, will start on first use - click to turn off';
+                this.powerItem.backgroundColor = undefined;
+                break;
+
+            case 'error':
+                this.powerItem.text = '$(warning) Voice: Error';
+                this.powerItem.tooltip = 'Voice server encountered an error - click to turn off';
+                this.powerItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+                break;
+        }
     }
 
     private update(): void {
@@ -109,6 +168,7 @@ export class StatusBar implements vscode.Disposable {
     }
 
     dispose(): void {
+        this.powerItem.dispose();
         this.item.dispose();
         this.disposables.forEach(d => d.dispose());
         this.logStoreSubscriptions.forEach(d => d.dispose());

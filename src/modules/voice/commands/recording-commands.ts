@@ -860,8 +860,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
         }),
 
         vscode.commands.registerCommand('sonara.voice.startRecording', async () => {
-            if (server.status !== 'ready') {
-                vscode.window.showWarningMessage('Voice server is not ready yet.');
+            if (!(await server.ensureRunning())) {
                 return;
             }
             if (isTranscribing) {

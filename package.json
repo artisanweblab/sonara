@@ -158,6 +158,21 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "sonara.voice.startServer",
+        "title": "Start Voice Server",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.voice.stopServer",
+        "title": "Stop Voice Server",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.voice.toggleServer",
+        "title": "Toggle Voice Server (on / off)",
+        "category": "Sonara"
+      },
+      {
         "command": "sonara.timeTracker.start",
         "title": "Start Time Tracking...",
         "category": "Sonara"
@@ -420,6 +435,13 @@
           "type": "boolean",
           "default": true,
           "description": "Show toast notification after transcription"
+        },
+        "sonara.voice.idleShutdownMinutes": {
+          "type": "number",
+          "default": 10,
+          "minimum": 0,
+          "maximum": 240,
+          "description": "Minutes of inactivity before the voice server shuts down to free memory. 0 = never shut down. Applies on the next server start."
         },
         "sonara.timeTracker.tickIntervalSec": {
           "type": "number",

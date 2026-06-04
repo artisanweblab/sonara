@@ -40,6 +40,9 @@ const VOICE_COMMAND_IDS: readonly string[] = [
     'sonara.voice.toggleShowAll.collapse',
     'sonara.voice.clearProjectLog',
     'sonara.voice.transcripts.refresh',
+    'sonara.voice.startServer',
+    'sonara.voice.stopServer',
+    'sonara.voice.toggleServer',
     'sonara.voice.restartServer',
     'sonara.voice.showServerLogs',
     'sonara.voice.showExtensionLogs',
@@ -88,9 +91,6 @@ export async function registerVoiceModule(
 
     const server = new ServerManager(context, extensionLog, serverLog);
     context.subscriptions.push(server);
-    server.start().catch(err => {
-        extensionLog.appendLine(`[Extension] Server start error: ${err}`);
-    });
 
     const apiClient = new ApiClient();
     server.onStatusChanged(status => {

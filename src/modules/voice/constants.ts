@@ -71,4 +71,5 @@ export const VOICE_DEFAULTS = {
 
 export const GLOBAL_STATE_KEYS = {
     setupMode: 'sonara.voice.setupMode',
+    serverEnabled: 'sonara.voice.serverEnabled',
 } as const;

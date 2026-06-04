@@ -24,8 +24,7 @@ export function registerTranscribeFileCommand(deps: CommandDeps): vscode.Disposa
     return vscode.commands.registerCommand('sonara.voice.transcribeFile', async () => {
         const { server, apiClient, activeProject, extensionLog, getTranscriptStore } = deps;
 
-        if (server.status !== 'ready') {
-            vscode.window.showWarningMessage('Voice server is not ready yet.');
+        if (!(await server.ensureRunning())) {
             return;
         }
 

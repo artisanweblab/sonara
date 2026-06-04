@@ -14,6 +14,7 @@ import asyncio
 import io
 import json
 import os
+import signal
 import socket
 import struct
 import sys
@@ -79,6 +80,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--token", type=str, required=True)
     parser.add_argument("--port-file", type=str, required=True, dest="port_file")
     parser.add_argument("--log-file", type=str, default=None, dest="log_file")
+    parser.add_argument(
+        "--idle-timeout-seconds",
+        type=int,
+        default=0,
+        dest="idle_timeout_seconds",
+        help="Shut down after this many seconds of inactivity (0 = disabled).",
+    )
     return parser.parse_args()
 
 
@@ -363,6 +371,64 @@ server_args: argparse.Namespace
 start_time: float = time.time()
 
 
+class ActivityTracker:
+    """Tracks the last transcription activity and the count of in-flight requests.
+
+    Uses threading.Lock because begin()/end() are called from worker threads
+    (asyncio.to_thread / threading.Thread) as well as from async route handlers.
+    idle_seconds() returns 0 while any request is active so a long-running
+    file transcription is never considered idle mid-stream.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._last_activity: float = time.monotonic()
+        self._active_requests: int = 0
+
+    def touch(self) -> None:
+        """Record the current moment as the last activity time (lock must already be held)."""
+        self._last_activity = time.monotonic()
+
+    def begin(self) -> None:
+        """Mark the start of a transcription request."""
+        with self._lock:
+            self._active_requests += 1
+            self.touch()
+
+    def end(self) -> None:
+        """Mark the end of a transcription request."""
+        with self._lock:
+            self._active_requests = max(0, self._active_requests - 1)
+            self.touch()
+
+    def idle_seconds(self) -> float:
+        """Return seconds since last activity, or 0 if any request is still active."""
+        with self._lock:
+            if self._active_requests > 0:
+                return 0.0
+            return time.monotonic() - self._last_activity
+
+
+activity_tracker = ActivityTracker()
+
+
+async def _idle_watcher(timeout: int, tracker: ActivityTracker) -> None:
+    """Shut the server down gracefully after `timeout` seconds of inactivity.
+
+    Polls at most every 30 seconds (or every `timeout` seconds when shorter)
+    so it reacts within one poll interval of the deadline being reached.
+    Sends SIGTERM so the server follows the same graceful-shutdown path as /shutdown.
+    """
+    poll_interval = min(timeout, 30)
+    while True:
+        await asyncio.sleep(poll_interval)
+        idle = tracker.idle_seconds()
+        if idle >= timeout:
+            logger.info("Idle for {}s, shutting down to free memory", round(idle))
+            os.kill(os.getpid(), signal.SIGTERM)
+            return
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     whisper.load(
@@ -372,7 +438,25 @@ async def lifespan(app: FastAPI):
         server_args.storage_dir,
         server_args.beam_size,
     )
+
+    watcher_task: Optional[asyncio.Task] = None
+    if server_args.idle_timeout_seconds > 0:
+        logger.info(
+            "Idle auto-shutdown enabled: will exit after {}s of inactivity",
+            server_args.idle_timeout_seconds,
+        )
+        watcher_task = asyncio.create_task(
+            _idle_watcher(server_args.idle_timeout_seconds, activity_tracker)
+        )
+
     yield
+
+    if watcher_task is not None:
+        watcher_task.cancel()
+        try:
+            await watcher_task
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 app = FastAPI(title="Sonara Voice", lifespan=lifespan)
@@ -458,6 +542,7 @@ async def transcribe(
     audio_bytes = await audio.read()
     audio_array = _decode_wav(audio_bytes)
 
+    activity_tracker.begin()
     try:
         if device_override == "cpu":
             result = await asyncio.to_thread(
@@ -473,6 +558,8 @@ async def transcribe(
         if _is_cuda_oom(exc):
             _raise_cuda_oom(exc)
         raise
+    finally:
+        activity_tracker.end()
 
     processing_time = round(time.time() - t0, 3)
     logger.info(
@@ -509,6 +596,8 @@ async def transcribe_file(
 
     if not os.path.isfile(body.path):
         raise HTTPException(status_code=400, detail=f"File not found: {body.path}")
+
+    activity_tracker.begin()
 
     queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
@@ -607,6 +696,7 @@ async def transcribe_file(
                 yield json.dumps(msg, ensure_ascii=False) + "\n"
         finally:
             abort_event.set()
+            activity_tracker.end()
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
 
@@ -644,6 +734,8 @@ async def transcribe_stream_ws(ws: WebSocket) -> None:
         await ws.send_json({"type": "error", "message": "Model not loaded yet"})
         await ws.close()
         return
+
+    activity_tracker.begin()
 
     transcriber = StreamingTranscriber(whisper=whisper, language=language, initial_prompt=initial_prompt)
     stop_event = asyncio.Event()
@@ -743,6 +835,7 @@ async def transcribe_stream_ws(ws: WebSocket) -> None:
         except Exception:
             pass
     finally:
+        activity_tracker.end()
         stop_event.set()
         periodic_task.cancel()
         try:

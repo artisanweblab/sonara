@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as cp from 'child_process';
 import * as crypto from 'crypto';
 
-import { VOICE_CONFIG_SECTION, VOICE_DEFAULTS } from '../constants';
+import { VOICE_CONFIG_SECTION, VOICE_DEFAULTS, GLOBAL_STATE_KEYS } from '../constants';
 import {
     modelsDir,
     pythonExecutable,
@@ -30,16 +30,21 @@ export class ServerManager implements vscode.Disposable {
     private _status: ServerStatus = 'stopped';
     private _port: number | null = null;
     private _token: string = '';
-    private restartCount: number = 0;
-    private restartWindowStart: number = 0;
     private healthCheckTimer: NodeJS.Timeout | null = null;
     private healthFailCount: number = 0;
     private readonly healthFailThreshold = 4;
     private oomDetected: boolean = false;
     private isServerOwner: boolean = false;
 
+    // Dedup parallel start() calls: all concurrent callers wait for the same
+    // in-flight promise instead of each racing through the spawn path.
+    private startInFlight: Promise<void> | null = null;
+
     private readonly onStatusChangedEmitter = new vscode.EventEmitter<ServerStatus>();
     readonly onStatusChanged = this.onStatusChangedEmitter.event;
+
+    private readonly onEnabledChangedEmitter = new vscode.EventEmitter<boolean>();
+    readonly onEnabledChanged = this.onEnabledChangedEmitter.event;
 
     private externalProgressReport: ((line: string) => void) | null = null;
 
@@ -61,11 +66,71 @@ export class ServerManager implements vscode.Disposable {
         return this._token;
     }
 
-    async start(): Promise<void> {
-        if (this._status === 'starting' || this._status === 'ready') {
-            return;
+    // Returns true when the user has not explicitly disabled the voice server.
+    // Defaults to true (enabled) when no preference has been stored yet.
+    isEnabled(): boolean {
+        return this.context.globalState.get<boolean>(GLOBAL_STATE_KEYS.serverEnabled, true);
+    }
+
+    async enable(): Promise<void> {
+        await this.context.globalState.update(GLOBAL_STATE_KEYS.serverEnabled, true);
+        this.onEnabledChangedEmitter.fire(true);
+        // Lazy start - the server will be brought up on first ensureRunning() call.
+    }
+
+    async disable(): Promise<void> {
+        await this.context.globalState.update(GLOBAL_STATE_KEYS.serverEnabled, false);
+        this.onEnabledChangedEmitter.fire(false);
+        // cleanupToken=true: intentional full shutdown, remove the token file.
+        // For a non-owner, stop() just forgets the reference without killing anything.
+        await this.stop(true);
+    }
+
+    // Ensures the server is running before a voice operation is attempted.
+    // Returns true when the server is (or becomes) ready, false when the user
+    // declines to enable it or the server fails to start.
+    async ensureRunning(): Promise<boolean> {
+        if (this._status === 'ready') {
+            return true;
         }
 
+        if (!this.isEnabled()) {
+            const choice = await vscode.window.showWarningMessage(
+                'Voice server is turned off. Turn it on?',
+                { modal: true },
+                'Turn On',
+            );
+            if (choice !== 'Turn On') {
+                return false;
+            }
+            await this.enable();
+        }
+
+        // Enabled but stopped / starting / error - bring it up and wait for ready.
+        await (this.startInFlight ?? this.start());
+        // Re-read status through the getter so TypeScript does not narrow the
+        // field type based on pre-await control-flow analysis.
+        return this.status === 'ready';
+    }
+
+    async start(): Promise<void> {
+        if (this._status === 'starting' || this._status === 'ready') {
+            // If another caller is already in the middle of start(), return that
+            // same promise so everyone waits for the same outcome.
+            return this.startInFlight ?? Promise.resolve();
+        }
+
+        // Create the shared in-flight promise so that any concurrent caller that
+        // arrives while we are starting (and hits the guard above) gets the same
+        // promise back.
+        this.startInFlight = this.doStart().finally(() => {
+            this.startInFlight = null;
+        });
+
+        return this.startInFlight;
+    }
+
+    private async doStart(): Promise<void> {
         this.setStatus('starting');
 
         if (await this.tryAdoptExistingServer()) {
@@ -231,6 +296,7 @@ export class ServerManager implements vscode.Disposable {
         const device = config.get<string>('device', VOICE_DEFAULTS.device);
         const computeType = config.get<string>('computeType', VOICE_DEFAULTS.computeType);
         const beamSize = config.get<number>('beamSize', VOICE_DEFAULTS.beamSize);
+        const idleMinutes = config.get<number>('idleShutdownMinutes', 10);
 
         // Remove stale port file
         if (fs.existsSync(portFile)) {
@@ -248,6 +314,7 @@ export class ServerManager implements vscode.Disposable {
             '--token', this._token,
             '--port-file', portFile,
             '--log-file', logFile,
+            '--idle-timeout-seconds', String(Math.max(0, Math.round(idleMinutes * 60))),
         ];
 
         this.extensionLog.appendLine(`[ServerManager] Starting: ${pythonPath} ${args.slice(0, 6).join(' ')} ...`);
@@ -482,10 +549,12 @@ export class ServerManager implements vscode.Disposable {
                         );
                         this.setStatus('error');
                         if (!this.isServerOwner) {
-                            // Owner will respawn; give it a head start then try to adopt
+                            // Non-owner: forget the reference; the next ensureRunning()
+                            // call will re-adopt lazily (via start() -> tryAdoptExistingServer
+                            // or spawn-lock wait).
                             this._port = null;
                             this._token = '';
-                            setTimeout(() => this.start(), 3000);
+                            this.setStatus('stopped');
                         }
                     }
                 }
@@ -501,13 +570,13 @@ export class ServerManager implements vscode.Disposable {
     }
 
     private handleUnexpectedExit(): void {
-        this.setStatus('error');
         this.process = null;
         this._port = null;
 
         if (this.oomDetected) {
             this.oomDetected = false;
             this.extensionLog.appendLine('[ServerManager] GPU out of memory - not restarting.');
+            this.setStatus('error');
             vscode.window.showErrorMessage(
                 'Not enough GPU memory to load the model. Try selecting a smaller model in settings.',
                 'Open Settings'
@@ -519,29 +588,10 @@ export class ServerManager implements vscode.Disposable {
             return;
         }
 
-        const now = Date.now();
-        if (now - this.restartWindowStart > 60000) {
-            this.restartWindowStart = now;
-            this.restartCount = 0;
-        }
-
-        this.restartCount++;
-        if (this.restartCount <= 3) {
-            this.extensionLog.appendLine(
-                `[ServerManager] Auto-restarting (attempt ${this.restartCount}/3)...`
-            );
-            setTimeout(() => this.start(), 2000);
-        } else {
-            this.extensionLog.appendLine('[ServerManager] Too many restarts, giving up.');
-            vscode.window.showErrorMessage(
-                'Voice server crashed repeatedly. Click to view logs.',
-                'Show Logs'
-            ).then(choice => {
-                if (choice === 'Show Logs') {
-                    this.extensionLog.show();
-                }
-            });
-        }
+        // Lazy restart: mark stopped and let the next ensureRunning() call
+        // bring the server back up on demand.
+        this.extensionLog.appendLine('[ServerManager] Process exited unexpectedly - will restart on next use.');
+        this.setStatus('stopped');
     }
 
     private async sendShutdown(): Promise<void> {
@@ -665,6 +715,7 @@ export class ServerManager implements vscode.Disposable {
     dispose(): void {
         this.stopHealthCheck();
         this.onStatusChangedEmitter.dispose();
+        this.onEnabledChangedEmitter.dispose();
         if (this.isServerOwner) {
             // M5: dispose() reached us as owner before stop() could run
             // (e.g. the extension host crashed or deactivate was not awaited).
@@ -685,7 +736,7 @@ export class ServerManager implements vscode.Disposable {
         // If stop() already ran as owner, it cleared isServerOwner and removed
         // the port file; the token file was intentionally kept for the restart
         // case and will have been removed by a subsequent stop() on full exit
-        // via the graceful shutdown path (deactivate → stop → dispose).
+        // via the graceful shutdown path (deactivate -> stop -> dispose).
         // Non-owner windows do nothing here - the server keeps running.
     }
 }
