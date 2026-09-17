@@ -1,5 +1,5 @@
 import { EMPTY_CONTENT_HASH, MISSING_MODE, OBJECT_ID_PATTERN, isValidMode } from '../model/file-state';
-import { DormantRecord, FrontierKind, FrontierRecord, STORED_REVIEW_LEVELS, StoredFrontierState, StoredFrontiers, StoredReviewLevel } from '../types';
+import { DormantRecord, FrontierKind, FrontierRecord, LEVEL_LABELS, STORED_REVIEW_LEVELS, StoredFrontierState, StoredFrontiers, StoredReviewLevel } from '../types';
 
 export const RECORD_VERSION = 5;
 
@@ -159,12 +159,30 @@ export function encodeRecord(repoPath: string, record: FrontierRecord): string {
     return JSON.stringify({ ...record, version: RECORD_VERSION, path: repoPath }, null, 2) + '\n';
 }
 
-export function textBlobReferences(record: FrontierRecord): string[] {
+export type BlobReferenceSlot = StoredReviewLevel | 'indexBase';
+
+export interface BlobReference {
+    hash: string;
+    slot: BlobReferenceSlot;
+}
+
+export function blobReferenceLabel(slot: BlobReferenceSlot): string {
+    return slot === 'indexBase' ? 'the staged base' : LEVEL_LABELS[slot];
+}
+
+export function textBlobReferenceEntries(record: FrontierRecord): BlobReference[] {
     if (record.kind !== 'text') {
         return [];
     }
-    return [...STORED_REVIEW_LEVELS.map(level => record.frontiers[level]?.content), record.indexBase?.content]
-        .filter((hash): hash is string => hash !== undefined);
+    const slots: BlobReferenceSlot[] = [...STORED_REVIEW_LEVELS, 'indexBase'];
+    return slots.flatMap(slot => {
+        const hash = slot === 'indexBase' ? record.indexBase?.content : record.frontiers[slot]?.content;
+        return hash === undefined ? [] : [{ hash, slot }];
+    });
+}
+
+export function textBlobReferences(record: FrontierRecord): string[] {
+    return textBlobReferenceEntries(record).map(reference => reference.hash);
 }
 
 export function legacyBlobReferences(raw: unknown): string[] {

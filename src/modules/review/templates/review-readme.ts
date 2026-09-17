@@ -8,7 +8,40 @@ This folder stores review marks for uncommitted changes. It is created and maint
 - **Never touch the git stage.** No \`git add\`, \`git reset\`, \`git restore --staged\`, \`git stash\`, \`git apply --cached\`, or any other command that changes the index. Staging is the owner's decision.
 - Reading these files is allowed: they tell you which changes the owner has already looked at.
 - Any file you edit lands on \`new\` for the owner. Editing code the owner already accepted is allowed, but say so in your report: name the file and what you changed in the accepted part, so the owner knows what to re-read.
-- To see what the owner accepted for a file, open \`files/<path>.json\` and read the blob named in \`frontiers.<level>.content\`: that is the exact file content the owner accepted on that level.
+- To see what the owner accepted, run the read-only command line described below instead of reading the files of this folder by hand: the levels are an overlay of accepted copies on the git index, not a plain list of marks.
+
+## Command line for AI agents (read-only)
+
+The extension writes a launcher into this folder every time it opens the project, so it always points at the installed version. Run it from anywhere; it needs \`node\` on the PATH and prints JSON by default:
+
+\`\`\`
+.vscode/sonara/review/sonara-review levels
+\`\`\`
+
+On Windows run \`sonara-review.cmd\` from the same folder.
+
+| Command | What it prints |
+|---------|----------------|
+| \`sonara-review levels\` | how many files and changes sit on every level |
+| \`sonara-review list --level read\` | the files that have changes on that level, with the number of changes |
+| \`sonara-review changes src/app.ts\` | the changes of one file, level by level: identifier, line range, label |
+| \`sonara-review show src/app.ts --level read\` | the file content accepted up to that level |
+| \`sonara-review diff src/app.ts --level read\` | the changes of that level alone, as a unified diff |
+
+Options: \`--level <new|queued|read|verified|staged>\`, \`--format text\` for a human-readable answer instead of JSON, \`--project <dir>\` when you call the entry point without the launcher. A file is named by its path from the repository root, or by an absolute path.
+
+Exit codes: \`0\` success, \`1\` wrong arguments, \`2\` unknown file or level, \`3\` no git repository, \`4\` the review data is being changed right now (the owner is moving levels - read again), \`5\` unexpected failure. With \`--format json\` a failure prints \`{"error": {"code": "...", "message": "..."}}\` and with \`--format text\` it writes the message to stderr.
+
+How to use it:
+
+- Before you change a file, \`changes <file>\` tells you which of its parts the owner has already accepted. Editing accepted code is allowed, but name it in your report, because the owner has to read it again.
+- \`show <file> --level verified\` is the exact text the owner accepted. Compare it with the file on disk to see what you changed after the review.
+- \`diff <file> --level new\` is everything nobody has looked at yet.
+- Line numbers from \`changes\` count the lines of the file as \`show --level <the same level>\` prints it, not the lines of the file on disk. A created or deleted file also carries one whole-file change (\`isWholeFile\`) next to its line changes.
+- \`kind\` is \`text\`, \`opaque\` (binary files and symbolic links) or \`special\` (submodules and unmerged files). For \`opaque\` and \`special\`, \`show\` prints a description instead of the bytes and \`diff\` prints one line per change.
+- In JSON, \`show\` gives \`content\` with \`encoding\` - \`utf-8\`, or \`base64\` when the file is not valid UTF-8. With \`--format text\` it writes the bytes as they are.
+- When a stored level of some other file cannot be read, the answer still comes with exit code 0 and carries \`unreadable\`: those files are shown from git only, exactly as the panel shows them. Asking about such a file itself fails with exit code 4.
+- The command line only reads. It never writes in this folder, never runs a git command that changes anything, and cannot move a change to another level - only the owner does that, from the Sonara Review panel.
 
 ## How the owner works with it
 
@@ -48,6 +81,8 @@ The module shows exactly the files git reports as changed (modified, deleted, st
 
 \`\`\`
 review/
+  sonara-review
+  sonara-review.cmd
   files/
     <path relative to the repository root>.json
   dormant/
@@ -62,6 +97,7 @@ review/
     owner.json
 \`\`\`
 
+- \`sonara-review\`, \`sonara-review.cmd\` - the read-only launcher described above, rewritten by the extension whenever it opens the project.
 - \`files/\` - accepted versions of files that are currently changed in git.
 - \`dormant/\` - accepted versions of files that left the git change list (for example after \`git stash\`). A file is parked here only if a stash made after its last review, on the same commit, holds exactly its working state. The record comes back when the file reappears with that state while this stash still exists (or is popped in the same refresh), and is deleted when the stash is gone or \`HEAD\` changes.
 - \`blobs/\` - exact copies of accepted text versions, named by the SHA-256 of their bytes. Identical copies are stored once; copies no longer referenced from \`files/\`, \`dormant/\` or \`quarantine/\` are deleted in the background.

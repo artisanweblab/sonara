@@ -8,14 +8,18 @@ import { VOCABULARY_TEMPLATE } from '../modules/voice/templates/vocabulary-templ
 import { VOICE_TRANSCRIPTS_README_CONTENT } from '../modules/voice/templates/voice-transcripts-readme';
 import { TIME_TRACKER_README_CONTENT } from '../modules/time-tracker/templates/time-tracker-readme';
 import { REVIEW_README_CONTENT } from '../modules/review/templates/review-readme';
+import {
+    REVIEW_FOLDER_NAME,
+    SONARA_ROOT,
+    TASKS_FOLDER_NAME,
+    TIME_TRACKER_FOLDER_NAME,
+    VOICE_LOG_FOLDER_NAME,
+    VOICE_TRANSCRIPTS_FOLDER_NAME,
+    reviewDirIn,
+    sonaraRootIn,
+} from './sonara-paths';
 
-const SONARA_ROOT = '.vscode/sonara';
-
-export const TASKS_FOLDER_NAME = `${SONARA_ROOT}/tasks`;
-export const VOICE_LOG_FOLDER_NAME = `${SONARA_ROOT}/voice-log`;
-export const VOICE_TRANSCRIPTS_FOLDER_NAME = `${SONARA_ROOT}/voice-transcripts`;
-export const TIME_TRACKER_FOLDER_NAME = `${SONARA_ROOT}/time-tracker`;
-export const REVIEW_FOLDER_NAME = `${SONARA_ROOT}/review`;
+export { REVIEW_FOLDER_NAME, TASKS_FOLDER_NAME, TIME_TRACKER_FOLDER_NAME, VOICE_LOG_FOLDER_NAME, VOICE_TRANSCRIPTS_FOLDER_NAME };
 
 const ROOT_README_FILE = 'README.md';
 
@@ -37,11 +41,11 @@ If your workspace has multiple folders, switch between them using the Active Pro
 
 - Before creating, modifying, or closing any task in \`tasks/\`, read \`tasks/README.md\` for the file format and rules.
 - \`vocabulary.md\` biases Whisper dictation across the whole project (voice-log, voice-transcripts, dictated task input). One term per line; \`#\` lines are comments. When the user corrects a misrecognized term, propose adding it. Write to the file only on explicit confirmation.
-- The owner reviews your uncommitted changes in levels with the Sonara Review panel. Before reporting on or changing code, read \`review/README.md\`: it explains how to tell which parts the owner already accepted. Never write in \`review/\` and never change the git stage.
+- The owner reviews your uncommitted changes in levels with the Sonara Review panel. Run \`review/sonara-review levels\` (read-only, prints JSON) to see which parts the owner already accepted, and read \`review/README.md\` for the rest of the commands. Never write in \`review/\` and never change the git stage.
 `;
 
 export function sonaraRoot(folder: vscode.WorkspaceFolder): string {
-    return path.join(folder.uri.fsPath, SONARA_ROOT);
+    return sonaraRootIn(folder.uri.fsPath);
 }
 
 export function tasksDir(folder: vscode.WorkspaceFolder): string {
@@ -73,7 +77,7 @@ export function timeTrackerDaysDir(folder: vscode.WorkspaceFolder): string {
 }
 
 export function reviewDir(folder: vscode.WorkspaceFolder): string {
-    return path.join(folder.uri.fsPath, REVIEW_FOLDER_NAME);
+    return reviewDirIn(folder.uri.fsPath);
 }
 
 interface SeedFile {
@@ -86,6 +90,7 @@ const EARLIER_ROOT_README_HASHES = [
     '52ee6ec5cbbf781f3b9dfd6679e7aba130065301106f3bfdeb6f6198dc5e26bb',
     '12bed207b7b76e12a296a56c174d586f93a4fe2551a0ad89b946a6e58a6227f9',
     'b26ca1a9b0d8a58a590d6fe2d011b6ed6e62d395d6dd15c97662a3a62c8969c1',
+    'afa3d378ef3e132d1194a65058aa1d626cc2b8fdca5525d851cc958e4b07a2c9',
 ];
 const EARLIER_TASKS_README_HASHES = [
     '5cb91741a307b16015a1cab6b0078e1027f516cff67e2ad7068ab127de43b67f',
@@ -101,6 +106,7 @@ const EARLIER_REVIEW_README_HASHES = [
     'c5c823b155f0e4caa4bc9870b5997bc37ec025ba94c4ee895f3239945a048136',
     'ba563f2fda81f90746dab3a22aecd434fb149ba024bb84b20556e6c80e20d68b',
     '3f3a170f667af9f0301e8343e2f6e886f0f4fdce9b947d651077325d975fa470',
+    '795a780e1e1774abedd7f7a3ec0be23662fbb913100d0731a294ca9a746f1cd5',
 ];
 const UPDATE_SUFFIX = '.new';
 

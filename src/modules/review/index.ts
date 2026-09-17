@@ -1,10 +1,13 @@
 import * as vscode from 'vscode';
 import { ActiveProject } from '../../shared/active-project';
+import { reviewDir } from '../../shared/project-layout';
 import { withTimestamps } from '../../shared/timestamped-channel';
+import { ReviewCliLauncher } from './cli/launcher-installer';
 import { OutputReviewLogger } from './logging/output-review-logger';
 import { ReviewLogger } from './logging/review-logger';
 import { executeMoveChange, executeMoveChangeAtCursor, executeNavigateNewChange } from './commands/change-commands';
 import { MoveDirection, executeMoveLevel } from './commands/move-level-command';
+import { executeCheckStorage } from './commands/check-storage-command';
 import { executeShowSummary } from './commands/show-summary-command';
 import { ReviewService, inactiveMessage } from './review-service';
 import { ReviewServiceHolder } from './review-service-holder';
@@ -113,6 +116,7 @@ export function registerReviewModule(context: vscode.ExtensionContext, activePro
             return;
         }
         logger.info(`Active project: ${folder.uri.fsPath}`);
+        ReviewCliLauncher.install(folder.uri.fsPath, context.extensionPath, logger);
         const service = new ReviewService(folder, logger);
         holder.set(service);
         service.start().catch(error => {
@@ -134,6 +138,11 @@ export function registerReviewModule(context: vscode.ExtensionContext, activePro
         loggedCommand(logger, 'sonara.review.showSummary', () => {
             logger.flush();
             executeShowSummary(output, holder.get());
+        }),
+        loggedCommand(logger, 'sonara.review.checkStorage', () => {
+            logger.flush();
+            const folder = activeProject.get();
+            return executeCheckStorage(output, folder ? reviewDir(folder) : undefined);
         }),
         loggedCommand(logger, 'sonara.review.refresh', () => withService(service => service.requestFullScan())),
         loggedCommand(logger, OPEN_LEVEL_DIFF_COMMAND, async (repoPath: unknown, level: unknown) => {

@@ -34,6 +34,15 @@ function compactFolder(folder: FolderNode): FolderNode {
     return current;
 }
 
+function assignDepth(nodes: readonly ReviewNode[], depth: number): void {
+    for (const node of nodes) {
+        if (node.type === 'folder') {
+            node.depth = depth;
+            assignDepth(node.children, depth + 1);
+        }
+    }
+}
+
 export function buildLevelChildren(
     level: ReviewLevel,
     entries: readonly LevelFileEntry[],
@@ -54,7 +63,7 @@ export function buildLevelChildren(
             folderPath = folderPath ? `${folderPath}/${segment}` : segment;
             let folder = folders.get(folderPath);
             if (!folder) {
-                folder = { type: 'folder', level, displayPath: folderPath, label: segment, children: [] };
+                folder = { type: 'folder', level, displayPath: folderPath, label: segment, depth: 1, children: [] };
                 folders.set(folderPath, folder);
                 siblings.push(folder);
             }
@@ -63,6 +72,7 @@ export function buildLevelChildren(
         siblings.push(file);
     }
     const nodes = compact ? root.map(node => node.type === 'folder' ? compactFolder(node) : node) : root;
+    assignDepth(nodes, 1);
     return sortTree(nodes);
 }
 

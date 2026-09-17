@@ -8,6 +8,10 @@ import { ReviewStorageError } from './review-storage-error';
 const HASH_PATTERN = /^[0-9a-f]{64}$/;
 const READ_CONCURRENCY = 32;
 
+export function isBlobName(name: string): boolean {
+    return HASH_PATTERN.test(name);
+}
+
 export class ReviewBlobStore {
     private readonly blobsRoot: string;
     private readonly lockDir: string;
@@ -71,9 +75,23 @@ export class ReviewBlobStore {
         }
         await fs.mkdir(this.blobsRoot, { recursive: true });
         const temporary = path.join(this.blobsRoot, `.${hash}.${process.pid}.${Date.now()}.tmp`);
-        await fs.writeFile(temporary, content);
+        const handle = await fs.open(temporary, 'wx');
+        try {
+            await handle.writeFile(content);
+            await handle.sync();
+        } finally {
+            await handle.close();
+        }
         await fs.rename(temporary, target);
         return hash;
+    }
+
+    async modifiedAt(name: string): Promise<number | null> {
+        try {
+            return (await fs.stat(path.join(this.blobsRoot, name))).mtimeMs;
+        } catch {
+            return null;
+        }
     }
 
     async list(): Promise<string[]> {

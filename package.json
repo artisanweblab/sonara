@@ -51,6 +51,11 @@
         "category": "Sonara"
       },
       {
+        "command": "sonara.review.checkStorage",
+        "title": "Check Review Storage",
+        "category": "Sonara"
+      },
+      {
         "command": "sonara.review.refresh",
         "title": "Refresh Review",
         "category": "Sonara",

@@ -18,6 +18,7 @@ export interface FolderNode {
     level: ReviewLevel;
     displayPath: string;
     label: string;
+    depth: number;
     children: ReviewNode[];
 }
 

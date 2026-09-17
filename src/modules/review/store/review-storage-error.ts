@@ -1,4 +1,4 @@
-export type StorageErrorKind = 'blob-missing' | 'blob-corrupt' | 'blob-unreadable' | 'record-unreadable' | 'record-newer-version';
+export type StorageErrorKind = 'blob-missing' | 'blob-corrupt' | 'blob-unreadable' | 'record-unreadable' | 'record-newer-version' | 'record-read-only';
 
 export class ReviewStorageError extends Error {
     constructor(

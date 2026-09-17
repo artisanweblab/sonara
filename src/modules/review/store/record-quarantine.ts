@@ -32,8 +32,8 @@ export class RecordQuarantine {
         }
     }
 
-    async referencedHashes(): Promise<Set<string>> {
-        const hashes = new Set<string>();
+    async list(): Promise<string[]> {
+        const files: string[] = [];
         const walk = async (dir: string): Promise<void> => {
             let entries: Dirent[];
             try {
@@ -48,15 +48,23 @@ export class RecordQuarantine {
                 const full = path.join(dir, entry.name);
                 if (entry.isDirectory()) {
                     await walk(full);
-                } else if (entry.isFile()) {
-                    const text = await fs.readFile(full, 'latin1');
-                    for (const match of text.match(HASH_REFERENCE) ?? []) {
-                        hashes.add(match);
-                    }
+                } else {
+                    files.push(full);
                 }
             }
         };
         await walk(this.root);
+        return files;
+    }
+
+    async referencedHashes(): Promise<Set<string>> {
+        const hashes = new Set<string>();
+        for (const file of await this.list()) {
+            const text = await fs.readFile(file, 'latin1');
+            for (const match of text.match(HASH_REFERENCE) ?? []) {
+                hashes.add(match);
+            }
+        }
         return hashes;
     }
 }

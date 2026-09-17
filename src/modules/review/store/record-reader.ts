@@ -26,6 +26,7 @@ export class RecordReader {
     constructor(
         private readonly health: StorageHealth,
         private readonly quarantine: RecordQuarantine,
+        private readonly isReadOnly: boolean = false,
     ) {}
 
     async readActive(repoPath: string, recordFile: string): Promise<ActiveRead> {
@@ -89,6 +90,10 @@ export class RecordReader {
     }
 
     private async isolate(recordFile: string, reason: string): Promise<boolean> {
+        if (this.isReadOnly) {
+            this.health.report({ kind: 'record-unreadable', location: recordFile, reason, quarantinedTo: null });
+            return true;
+        }
         const result = await this.quarantine.isolate(recordFile);
         if (result.status === 'gone') {
             return true;

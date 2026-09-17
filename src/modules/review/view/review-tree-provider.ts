@@ -8,6 +8,8 @@ import { TreeLayout, buildLevelChildren, collectFiles, collectStates } from './r
 
 export const OPEN_LEVEL_DIFF_COMMAND = 'sonara.review.openLevelDiff';
 
+const EXPANDED_FOLDER_DEPTH = 1;
+
 export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, vscode.Disposable {
     static readonly VIEW_ID = 'sonara.review';
 
@@ -55,7 +57,10 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
             case 'level':
                 return this.levelItem(node);
             case 'folder': {
-                const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
+                const state = node.depth <= EXPANDED_FOLDER_DEPTH
+                    ? vscode.TreeItemCollapsibleState.Expanded
+                    : vscode.TreeItemCollapsibleState.Collapsed;
+                const item = new vscode.TreeItem(node.label, state);
                 item.id = `folder/${node.level}/${node.displayPath}`;
                 item.iconPath = vscode.ThemeIcon.Folder;
                 item.resourceUri = vscode.Uri.file(this.absoluteDisplayPath(node.displayPath));

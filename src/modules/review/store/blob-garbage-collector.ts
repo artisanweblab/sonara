@@ -1,11 +1,12 @@
 import { ReviewLogger } from '../logging/review-logger';
 import { MoveJournal } from './move-journal';
 import { legacyBlobReferences, textBlobReferences } from './record-codec';
-import { ReviewBlobStore } from './review-blob-store';
+import { ReviewBlobStore, isBlobName } from './review-blob-store';
 import { ReviewStateStore } from './review-state-store';
 import { StorageHealth } from './storage-health';
 
 const COLLECT_DELAY_MS = 15000;
+const YOUNG_BLOB_MS = 600000;
 
 export class BlobGarbageCollector {
     private timer: NodeJS.Timeout | undefined;
@@ -64,7 +65,11 @@ export class BlobGarbageCollector {
     }
 
     private async collect(): Promise<void> {
-        const entries = await this.blobs.list();
+        const listed = await this.blobs.list();
+        const entries = listed.filter(isBlobName);
+        if (listed.length !== entries.length) {
+            this.logger.debug(`Blob GC: ${listed.length - entries.length} files in the blob folder are not accepted versions and are left alone`);
+        }
         if (entries.length === 0) {
             return;
         }
@@ -84,12 +89,20 @@ export class BlobGarbageCollector {
             return;
         }
         let removed = 0;
+        let young = 0;
+        const youngerThan = Date.now() - YOUNG_BLOB_MS;
         for (const entry of entries) {
-            if (!referenced.has(entry)) {
-                await this.blobs.remove(entry);
-                removed++;
+            if (referenced.has(entry)) {
+                continue;
             }
+            const modifiedAt = await this.blobs.modifiedAt(entry);
+            if (modifiedAt === null || modifiedAt > youngerThan) {
+                young++;
+                continue;
+            }
+            await this.blobs.remove(entry);
+            removed++;
         }
-        this.logger.info(`Blob GC: ${entries.length} blobs, ${removed} removed`);
+        this.logger.info(`Blob GC: ${entries.length} blobs, ${referenced.size} referenced, ${removed} removed, ${young} unreferenced but too young to remove`);
     }
 }

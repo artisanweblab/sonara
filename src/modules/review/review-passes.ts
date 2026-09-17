@@ -1,5 +1,4 @@
 import { createHash } from 'crypto';
-import * as vscode from 'vscode';
 import { AppliedMove } from './frontiers/frontier-mover';
 import { FileEvaluation, gitAtoms, scanGeneration } from './frontiers/level-changes';
 import { PassStashes } from './frontiers/pass-stashes';
@@ -11,6 +10,7 @@ import { ReviewLogger } from './logging/review-logger';
 import { recordId } from './model/file-generation';
 import { mapLimit } from './model/map-limit';
 import { PathCoverage } from './model/path-coverage';
+import { ProgressRunner } from './progress-runner';
 import { ReviewEngine } from './review-engine';
 import { ReviewStateStore } from './store/review-state-store';
 import { FrontierRecord, REVIEW_LEVELS, ReviewAtomState, ReviewFileState, ReviewLevel, ScannedFile } from './types';
@@ -50,6 +50,7 @@ export class ReviewPasses {
         private readonly logger: ReviewLogger,
         private readonly isDisposed: () => boolean,
         private readonly onStorageError: StorageErrorHandler,
+        private readonly progress: ProgressRunner,
     ) {}
 
     getHead(): string {
@@ -88,28 +89,25 @@ export class ReviewPasses {
     }
 
     async full(): Promise<void> {
-        await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Window, title: 'Sonara Review: scanning changes' },
-            async () => {
-                const startedAt = Date.now();
-                this.history.beginPass();
-                this.indexStamp = await this.engine.gitState.indexStamp();
-                this.pathStamps.clear();
-                const scan = await this.engine.scanner.scan([this.scopeSpec()]);
-                const stamps = await mapLimit(scan.files, STAT_CONCURRENCY, file => fileStamp(this.engine.scope.absolutePath(file.path)));
-                scan.files.forEach((file, position) => this.pathStamps.set(file.path, stamps[position]));
-                await this.store.listStoredPaths();
-                await this.store.listDormantPaths();
-                const previous = this.files;
-                this.replaceFiles(new Map());
-                const stashes = this.passStashes();
-                await stashes.entries();
-                const processed = new Set<string>();
-                await this.applyScan(scan, this.knownRecordPaths(() => true), previous, stashes, processed);
-                await this.finishPass(stashes, processed);
-                this.logScan('full scan', scan.files.length, startedAt);
-            },
-        );
+        await this.progress('Sonara Review: scanning changes', async () => {
+            const startedAt = Date.now();
+            this.history.beginPass();
+            this.indexStamp = await this.engine.gitState.indexStamp();
+            this.pathStamps.clear();
+            const scan = await this.engine.scanner.scan([this.scopeSpec()]);
+            const stamps = await mapLimit(scan.files, STAT_CONCURRENCY, file => fileStamp(this.engine.scope.absolutePath(file.path)));
+            scan.files.forEach((file, position) => this.pathStamps.set(file.path, stamps[position]));
+            await this.store.listStoredPaths();
+            await this.store.listDormantPaths();
+            const previous = this.files;
+            this.replaceFiles(new Map());
+            const stashes = this.passStashes();
+            await stashes.entries();
+            const processed = new Set<string>();
+            await this.applyScan(scan, this.knownRecordPaths(() => true), previous, stashes, processed);
+            await this.finishPass(stashes, processed);
+            this.logScan('full scan', scan.files.length, startedAt);
+        });
     }
 
     async partial(fsPaths: readonly string[], isForced: boolean): Promise<void> {

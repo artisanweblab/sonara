@@ -1,4 +1,3 @@
-import * as vscode from 'vscode';
 import { ComputePool } from './compute/compute-pool';
 import { BulkEvaluator } from './frontiers/bulk-evaluator';
 import { FileStackBuilder } from './frontiers/file-stack-builder';
@@ -45,7 +44,7 @@ export interface ReviewEngine {
 }
 
 export interface ReviewEngineOptions {
-    folder: vscode.WorkspaceFolder;
+    folderPath: string;
     repoRoot: string;
     reviewRoot: string;
     gitPath: string;
@@ -57,7 +56,7 @@ export interface ReviewEngineOptions {
 
 export function createReviewEngine(options: ReviewEngineOptions): ReviewEngine {
     const { repoRoot, gitPath, logger, store, blobs } = options;
-    const scope = new ReviewScope(options.folder, repoRoot);
+    const scope = new ReviewScope(options.folderPath, repoRoot);
     const reader = new GitReader(repoRoot, logger, gitPath);
     const gitState = new GitRepositoryState(reader, repoRoot);
     const loader = new ContentLoader(reader, gitState, repoRoot);

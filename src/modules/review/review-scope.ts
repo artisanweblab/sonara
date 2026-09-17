@@ -1,7 +1,6 @@
 import { realpathSync } from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
-import { REVIEW_FOLDER_NAME } from '../../shared/project-layout';
+import { REVIEW_FOLDER_NAME } from '../../shared/sonara-paths';
 
 function toPosix(value: string): string {
     return value.split(path.sep).join('/');
@@ -17,7 +16,7 @@ export class ReviewScope {
     private readonly realFolder: string;
 
     constructor(
-        private readonly folder: vscode.WorkspaceFolder,
+        private readonly folderPath: string,
         readonly repoRoot: string,
     ) {
         this.realFolder = this.realFolderPath();
@@ -31,7 +30,7 @@ export class ReviewScope {
 
     toRepoPath(fsPath: string): string | null {
         const roots: [string, string][] = [
-            [this.folder.uri.fsPath, this.projectPrefix],
+            [this.folderPath, this.projectPrefix],
             [this.realFolder, this.projectPrefix],
             [this.repoRoot, ''],
         ];
@@ -59,9 +58,9 @@ export class ReviewScope {
 
     private realFolderPath(): string {
         try {
-            return realpathSync(this.folder.uri.fsPath);
+            return realpathSync(this.folderPath);
         } catch {
-            return this.folder.uri.fsPath;
+            return this.folderPath;
         }
     }
 }

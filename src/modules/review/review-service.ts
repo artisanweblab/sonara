@@ -6,17 +6,23 @@ import { GitReader } from './git/git-reader';
 import { RepositoryChange, RepositoryWatcher } from './git/repository-watcher';
 import { ReviewLogger } from './logging/review-logger';
 import { describeGeneration } from './model/file-generation';
+import { ProgressRunner } from './progress-runner';
 import { ReviewEngine, createReviewEngine } from './review-engine';
 import { LevelMoveReport, LevelMoveRequest, LevelSelection, requestsFromSelections } from './review-level-mover';
 import { ReviewPasses } from './review-passes';
 import { ReviewStorageNotices } from './review-storage-notices';
 import { BlobGarbageCollector } from './store/blob-garbage-collector';
+import { RecordBlobRepair } from './store/record-blob-repair';
 import { ReviewBlobStore } from './store/review-blob-store';
 import { ReviewStateStore } from './store/review-state-store';
+import { ReviewStorageError } from './store/review-storage-error';
 import { StorageHealth } from './store/storage-health';
-import { FileGeneration, LEVEL_LABELS, LevelDocument, ReviewAtomState, ReviewFileState, ReviewLevel } from './types';
+import { FileGeneration, FrontierRecord, LEVEL_LABELS, LevelDocument, ReviewAtomState, ReviewFileState, ReviewLevel } from './types';
 
 const NOTIFICATION_PROGRESS_THRESHOLD = 50;
+
+const windowProgress: ProgressRunner = async <T>(title: string, task: () => Promise<T>): Promise<T> =>
+    await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title }, task);
 
 export interface LevelChangeReference {
     repoPath: string;
@@ -64,7 +70,7 @@ export class ReviewService implements vscode.Disposable {
     ) {
         this.blobs = new ReviewBlobStore(reviewDir(folder));
         this.store = new ReviewStateStore(reviewDir(folder), this.health, this.blobs);
-        this.notices = new ReviewStorageNotices(this.store, this.blobs, this.health, logger, repoPath => this.queuePaths([repoPath]));
+        this.notices = new ReviewStorageNotices(this.store, new RecordBlobRepair(this.store, this.blobs), this.health, logger, repoPath => this.queuePaths([repoPath]));
         this.watcher = new RepositoryWatcher(folder, reviewDir(folder), logger);
         this.disposables.push(this.watcher);
     }
@@ -95,7 +101,7 @@ export class ReviewService implements vscode.Disposable {
         }
         this.logger.info(`Review started for ${this.folder.uri.fsPath}, repository root ${repoRoot}`);
         const engine = createReviewEngine({
-            folder: this.folder,
+            folderPath: this.folder.uri.fsPath,
             repoRoot,
             reviewRoot: reviewDir(this.folder),
             gitPath: started.gitPath,
@@ -105,7 +111,7 @@ export class ReviewService implements vscode.Disposable {
             getFile: repoPath => this.passes?.getFile(repoPath),
         });
         this.engine = engine;
-        this.passes = new ReviewPasses(engine, this.store, this.logger, () => this.isDisposed, (repoPath, error) => void this.notices.onEvaluationError(repoPath, error));
+        this.passes = new ReviewPasses(engine, this.store, this.logger, () => this.isDisposed, (repoPath, error) => void this.notices.onEvaluationError(repoPath, error), windowProgress);
         this.collector = new BlobGarbageCollector(this.blobs, this.store, engine.journal, this.health, this.logger, () => this.runningTasks > 0 || engine.repository.isBusy());
         this.disposables.push(new vscode.Disposable(() => this.collector?.dispose()), new vscode.Disposable(() => engine.pool.dispose()));
         await this.recover(engine);
@@ -162,18 +168,36 @@ export class ReviewService implements vscode.Disposable {
         }
         try {
             const record = await this.passes.usableRecord(repoPath);
-            const document = await engine.evaluator.document(file.scanned, this.passes.getHead(), record, level);
-            this.logger.info(`Level diff built: ${repoPath} ${level}, ${document.changes.length} changes, frontiers ${record ? Object.keys(record.frontiers).join(',') : 'none'}, ${describeGeneration(document.generation)}`);
-            const scanned = file.generation;
-            if (document.generation.worktree !== scanned.worktree || document.generation.index !== scanned.index || document.generation.record !== scanned.record) {
-                this.logger.info(`Level diff: ${repoPath} changed since the last scan, rescan queued`);
-                this.queuePaths([repoPath]);
-            }
-            return document;
+            return await this.buildDocument(repoPath, file.scanned, record, level, file.generation);
         } catch (error) {
+            if (error instanceof ReviewStorageError && error.kind === 'blob-missing') {
+                await this.notices.onEvaluationError(repoPath, error);
+                this.logger.info(`Level diff for ${repoPath} ${level} is built without the stored levels: ${error.message}`);
+                return await this.buildDocument(repoPath, file.scanned, null, level, file.generation);
+            }
             this.logger.error(`Level diff for ${repoPath} ${level} failed`, error);
             throw error;
         }
+    }
+
+    private async buildDocument(
+        repoPath: string,
+        scanned: ReviewFileState['scanned'],
+        record: FrontierRecord | null,
+        level: ReviewLevel,
+        generation: FileGeneration,
+    ): Promise<LevelDocument | null> {
+        const engine = this.engine;
+        if (!engine || !this.passes) {
+            return null;
+        }
+        const document = await engine.evaluator.document(scanned, this.passes.getHead(), record, level);
+        this.logger.info(`Level diff built: ${repoPath} ${level}, ${document.changes.length} changes, frontiers ${record ? Object.keys(record.frontiers).join(',') : 'none'}, ${describeGeneration(document.generation)}`);
+        if (document.generation.worktree !== generation.worktree || document.generation.index !== generation.index || document.generation.record !== generation.record) {
+            this.logger.info(`Level diff: ${repoPath} changed since the last scan, rescan queued`);
+            this.queuePaths([repoPath]);
+        }
+        return document;
     }
 
     async firstWorkingLine(repoPath: string, level: ReviewLevel): Promise<number> {

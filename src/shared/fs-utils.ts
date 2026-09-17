@@ -1,7 +1,6 @@
-import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
-import * as path from 'path';
 import * as vscode from 'vscode';
+import { atomicWriteFile } from './atomic-write';
 
 function toFsPath(target: vscode.Uri | string): string {
     return typeof target === 'string' ? target : target.fsPath;
@@ -12,13 +11,7 @@ function toUri(target: vscode.Uri | string): vscode.Uri {
 }
 
 export async function atomicWrite(target: vscode.Uri | string, content: string): Promise<void> {
-    const targetPath = toFsPath(target);
-    const dir = path.dirname(targetPath);
-    const base = path.basename(targetPath);
-    const tmpPath = path.join(dir, `.${base}.${process.pid}.${Date.now()}.tmp`);
-
-    await fs.writeFile(tmpPath, content, 'utf8');
-    await fs.rename(tmpPath, targetPath);
+    await atomicWriteFile(toFsPath(target), content);
 }
 
 export async function pathExists(target: vscode.Uri | string): Promise<boolean> {

@@ -1,11 +1,11 @@
-import { Dirent } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { atomicWrite } from '../../../shared/fs-utils';
+import { atomicWriteFile } from '../../../shared/atomic-write';
 import { DormantRecord, FrontierRecord } from '../types';
 import { mapLimit } from '../model/map-limit';
 import { isErrorCode } from './directory-lock';
 import { encodeRecord } from './record-codec';
+import { RECORD_EXTENSION, listRecordFiles } from './record-files';
 import { RecordPathIndex, RecordRoot } from './record-path-index';
 import { RecordQuarantine } from './record-quarantine';
 import { ActiveRead, DormantRead, RecordReader } from './record-reader';
@@ -13,7 +13,6 @@ import { ReviewBlobStore } from './review-blob-store';
 import { ReviewStorageError } from './review-storage-error';
 import { StorageHealth } from './storage-health';
 
-const RECORD_EXTENSION = '.json';
 const READ_CONCURRENCY = 32;
 
 export interface RecordPair {
@@ -46,10 +45,11 @@ export class ReviewStateStore {
         reviewRoot: string,
         private readonly health: StorageHealth,
         private readonly blobs: ReviewBlobStore,
+        private readonly isReadOnly: boolean = false,
     ) {
         this.roots = { files: path.join(reviewRoot, 'files'), dormant: path.join(reviewRoot, 'dormant') };
         this.quarantine = new RecordQuarantine(reviewRoot);
-        this.reader = new RecordReader(health, this.quarantine);
+        this.reader = new RecordReader(health, this.quarantine, isReadOnly);
     }
 
     writeCount(): number {
@@ -59,7 +59,7 @@ export class ReviewStateStore {
     locate(fsPath: string): RecordLocation | null {
         for (const root of ['files', 'dormant'] as const) {
             const relative = path.relative(this.roots[root], fsPath);
-            if (relative.startsWith('..') || path.isAbsolute(relative) || !relative.endsWith(RECORD_EXTENSION) || path.basename(relative).startsWith('.')) {
+            if (relative.startsWith('..') || path.isAbsolute(relative) || !relative.endsWith(RECORD_EXTENSION)) {
                 continue;
             }
             return { root, repoPath: relative.slice(0, -RECORD_EXTENSION.length).split(path.sep).join('/') };
@@ -136,7 +136,7 @@ export class ReviewStateStore {
     }
 
     withStoreLock<T>(task: () => Promise<T>): Promise<T> {
-        return this.blobs.withCollectionLock(task);
+        return this.isReadOnly ? task() : this.blobs.withCollectionLock(task);
     }
 
     async readPairs(repoPaths: readonly string[]): Promise<Map<string, RecordPair>> {
@@ -152,6 +152,9 @@ export class ReviewStateStore {
             if (change.active === undefined && change.dormant === undefined) {
                 return pair;
             }
+            if (this.isReadOnly) {
+                return this.applied(pair, change);
+            }
             for (const blob of change.blobs ?? []) {
                 await this.blobs.write(blob);
             }
@@ -162,6 +165,12 @@ export class ReviewStateStore {
 
     async writeActive(repoPath: string, record: FrontierRecord | null): Promise<void> {
         await this.writeOrDelete('files', repoPath, record && Object.keys(record.frontiers).length > 0 ? record : null);
+    }
+
+    async drop(repoPath: string, roots: readonly RecordRoot[]): Promise<void> {
+        for (const root of roots) {
+            await this.writeOrDelete(root, repoPath, null);
+        }
     }
 
     private applied(pair: RecordPair, change: RecordChange): RecordPair {
@@ -191,6 +200,9 @@ export class ReviewStateStore {
     }
 
     private async writeOrDelete(root: RecordRoot, repoPath: string, record: FrontierRecord | null): Promise<void> {
+        if (this.isReadOnly) {
+            throw new ReviewStorageError('record-read-only', `Sonara Review: ${repoPath} cannot be written, this process may only read the review records`);
+        }
         const target = this.filePath(root, repoPath);
         this.writes++;
         if (!record) {
@@ -203,7 +215,7 @@ export class ReviewStateStore {
         for (let attempt = 0; ; attempt++) {
             await fs.mkdir(path.dirname(target), { recursive: true });
             try {
-                await atomicWrite(target, content);
+                await atomicWriteFile(target, content);
                 this.index.set(root, repoPath, true);
                 return;
             } catch (error) {
@@ -224,33 +236,14 @@ export class ReviewStateStore {
     }
 
     private async listPaths(root: string): Promise<string[]> {
-        const result: string[] = [];
-        let isComplete = true;
-        const walk = async (dir: string): Promise<void> => {
-            let entries: Dirent[];
-            try {
-                entries = await fs.readdir(dir, { withFileTypes: true });
-            } catch (error) {
-                if (!isErrorCode(error, 'ENOENT')) {
-                    isComplete = false;
-                    this.health.report({ kind: 'directory-unreadable', location: dir, reason: error instanceof Error ? error.message : String(error), quarantinedTo: null });
-                }
-                return;
-            }
-            for (const entry of entries) {
-                const full = path.join(dir, entry.name);
-                if (entry.isDirectory()) {
-                    await walk(full);
-                } else if (entry.isFile() && entry.name.endsWith(RECORD_EXTENSION) && !entry.name.startsWith('.')) {
-                    result.push(path.relative(root, full).slice(0, -RECORD_EXTENSION.length).split(path.sep).join('/'));
-                }
-            }
-        };
-        await walk(root);
-        if (isComplete) {
+        const listing = await listRecordFiles(root);
+        for (const failure of listing.unreadable) {
+            this.health.report({ kind: 'directory-unreadable', location: failure.directory, reason: failure.reason, quarantinedTo: null });
+        }
+        if (listing.unreadable.length === 0) {
             this.health.recoveredDirectoriesUnder(root);
         }
-        return result;
+        return listing.repoPaths;
     }
 
     private filePath(root: RecordRoot, repoPath: string): string {
