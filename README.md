@@ -1,10 +1,10 @@
 # Sonara
 
-Tasks, voice dictation, and time tracking for VS Code - all stored as plain files inside your project. No account, no cloud, no telemetry. Everything runs locally.
+Tasks, voice dictation, time tracking, and step-by-step review of uncommitted changes for VS Code - all stored as plain files inside your project. No account, no cloud, no telemetry. Everything runs locally.
 
 ![Sonara overview](./media/screenshots/overview.png)
 
-Sonara adds a sidebar with three panels - **Tasks**, **Voice Log**, and **Voice Transcripts** - plus a **Time Tracker** in the status bar. Each project (workspace folder) keeps its own data under `.vscode/sonara/`.
+Sonara adds a sidebar with four panels - **Tasks**, **Review**, **Voice Log**, and **Voice Transcripts** - plus a **Time Tracker** in the status bar. Each project (workspace folder) keeps its own data under `.vscode/sonara/`.
 
 ## Features
 
@@ -20,6 +20,21 @@ Manage project tasks as plain markdown files - they travel with your repository.
 - Create, edit, and delete tasks without leaving VS Code
 - "Copy Agent Context" puts a task's details on the clipboard for pasting into an AI assistant
 - Stored under `.vscode/sonara/tasks/` - commit them with your code or keep them local
+
+### Review
+
+Review uncommitted changes in steps instead of two buckets (changed / staged). Built for code written by AI agents: mark what you have already read, and anything the agent changes afterwards comes back as new.
+
+- Five levels, from top to bottom: **Ready to commit**, **Verified**, **Looked**, **Seen**, **New**. Ready to commit is the real git stage; the other levels are kept by the extension
+- The panel lists exactly the files git reports as changed, grouped by level, as a folder tree or a flat list (follows `scm.defaultViewMode` and `scm.compactFolders`). Each level shows `files / changes`
+- Move a folder, a file, or a whole level with **Move Up**, **Move Down**, **Move to Level...**; any level can be chosen directly. Moving to Ready to commit stages the changes, moving down from it unstages them
+- Click a file to open the changes of that level only: the left side is `HEAD` plus all levels above, the right side adds this level. Both sides are read-only; **Open File** opens the real file for editing
+- Move a single change from the level diff with the CodeLens above it or with `Sonara: Move Change Up` / `Move Change Down` / `Move Change to Level...` for the change under the cursor
+- `Sonara: Next New Change` / `Previous New Change` walk through everything on New across files
+- Any edit - yours or an agent's - lands on New and shows as the difference from the version you accepted; the accepted version stays on its level
+- Staging or unstaging through the regular Source Control view keeps your levels. Committed parts leave the panel; after `git stash` and `git stash pop` the levels come back if the files return byte-identical
+- Every action is logged to the **Sonara Review** output channel
+- Stored under `.vscode/sonara/review/`
 
 ### Voice
 
@@ -66,7 +81,7 @@ Track time per task, stored as plain daily files.
 
 ## Quick Start
 
-1. **Open the sidebar.** Click the Sonara icon in the Activity Bar. Three panels appear: Tasks, Voice Log, Voice Transcripts. The `.vscode/sonara/` folder is created automatically the first time you use a feature.
+1. **Open the sidebar.** Click the Sonara icon in the Activity Bar. Four panels appear: Tasks, Review, Voice Log, Voice Transcripts. The `.vscode/sonara/` folder is created automatically the first time you use a feature.
 2. **Create a task.** In the Tasks panel, click **New Task** (the `+` button), fill in the details, and it is saved as a markdown file.
 3. **Dictate.** Press `Ctrl+Shift+M` to start. On first use the Whisper model downloads (one time). Speak, then press `Ctrl+Shift+M` again to stop and save the entry to the Voice Log.
 4. **Multiple folders?** Use the **Active Project** selector at the top of the sidebar to switch between workspace folders - each keeps its own independent data.
@@ -137,6 +152,7 @@ Everything Sonara stores lives under `.vscode/sonara/` in each workspace folder:
 | `vocabulary.md` | Project vocabulary that biases Whisper |
 | `voice-transcripts/` | File transcripts as markdown |
 | `time-tracker/days/` | Per-day time tracking data as JSON |
+| `review/` | Review levels: accepted file versions, per-file records, and a format `README.md` |
 
 Whether you commit these is up to you - the extension does not touch your `.gitignore`. Voice data can contain personal recordings; consider excluding `voice-log/` and `voice-transcripts/` from shared repositories.
 

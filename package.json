@@ -46,6 +46,94 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "sonara.review.showSummary",
+        "title": "Show Review Summary",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.refresh",
+        "title": "Refresh Review",
+        "category": "Sonara",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "sonara.review.openLevelDiff",
+        "title": "Open Level Changes",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.openFile",
+        "title": "Open File",
+        "category": "Sonara",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "sonara.review.moveChange",
+        "title": "Move Change",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.moveChangeUp",
+        "title": "Move Change Up",
+        "category": "Sonara",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "sonara.review.moveChangeDown",
+        "title": "Move Change Down",
+        "category": "Sonara",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "sonara.review.moveChangeToLevel",
+        "title": "Move Change to Level...",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.nextNewChange",
+        "title": "Next New Change",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.previousNewChange",
+        "title": "Previous New Change",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.moveUp",
+        "title": "Move Up",
+        "category": "Sonara",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "sonara.review.moveDown",
+        "title": "Move Down",
+        "category": "Sonara",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "sonara.review.moveToLevel",
+        "title": "Move to Level...",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.moveAllUp",
+        "title": "Move All Up",
+        "category": "Sonara",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "sonara.review.moveAllDown",
+        "title": "Move All Down",
+        "category": "Sonara",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "sonara.review.moveAllToLevel",
+        "title": "Move All to Level...",
+        "category": "Sonara"
+      },
+      {
         "command": "sonara.voice.startRecording",
         "title": "Start Recording",
         "category": "Sonara"
@@ -202,7 +290,7 @@
       "view/title": [
         {
           "command": "sonara.activeProject.pick",
-          "when": "view == sonara.tasks || view == sonara.voice.log || view == sonara.voice.transcripts",
+          "when": "view == sonara.tasks || view == sonara.review || view == sonara.voice.log || view == sonara.voice.transcripts",
           "group": "navigation@99"
         },
         {
@@ -219,6 +307,11 @@
           "command": "sonara.tasks.refresh",
           "when": "view == sonara.tasks",
           "group": "1_actions@1"
+        },
+        {
+          "command": "sonara.review.refresh",
+          "when": "view == sonara.review",
+          "group": "navigation@1"
         },
         {
           "command": "sonara.voice.toggleShowAll.expand",
@@ -261,7 +354,124 @@
           "group": "1_actions@2"
         }
       ],
+      "editor/title": [
+        {
+          "command": "sonara.review.moveChangeUp",
+          "when": "resourceScheme == sonara-review",
+          "group": "navigation@0"
+        },
+        {
+          "command": "sonara.review.moveChangeDown",
+          "when": "resourceScheme == sonara-review",
+          "group": "navigation@0"
+        },
+        {
+          "command": "sonara.review.openFile",
+          "when": "resourceScheme == sonara-review",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "sonara.review.moveUp",
+          "when": "view == sonara.review && viewItem =~ /^review(Folder|File)\\.(new|queued|read|verified)$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "sonara.review.moveDown",
+          "when": "view == sonara.review && viewItem =~ /^review(Folder|File)\\.(queued|read|verified|staged)$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "sonara.review.moveUp",
+          "when": "view == sonara.review && viewItem =~ /^review(Folder|File)\\.(new|queued|read|verified)$/",
+          "group": "1_move@1"
+        },
+        {
+          "command": "sonara.review.moveDown",
+          "when": "view == sonara.review && viewItem =~ /^review(Folder|File)\\.(queued|read|verified|staged)$/",
+          "group": "1_move@2"
+        },
+        {
+          "command": "sonara.review.moveToLevel",
+          "when": "view == sonara.review && viewItem =~ /^review(Folder|File)\\./",
+          "group": "1_move@3"
+        },
+        {
+          "command": "sonara.review.moveAllUp",
+          "when": "view == sonara.review && viewItem =~ /^reviewLevel\\.(new|queued|read|verified)$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "sonara.review.moveAllDown",
+          "when": "view == sonara.review && viewItem =~ /^reviewLevel\\.(queued|read|verified|staged)$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "sonara.review.moveAllUp",
+          "when": "view == sonara.review && viewItem =~ /^reviewLevel\\.(new|queued|read|verified)$/",
+          "group": "1_move@1"
+        },
+        {
+          "command": "sonara.review.moveAllDown",
+          "when": "view == sonara.review && viewItem =~ /^reviewLevel\\.(queued|read|verified|staged)$/",
+          "group": "1_move@2"
+        },
+        {
+          "command": "sonara.review.moveAllToLevel",
+          "when": "view == sonara.review && viewItem =~ /^reviewLevel\\./",
+          "group": "1_move@3"
+        }
+      ],
       "commandPalette": [
+        {
+          "command": "sonara.review.openLevelDiff",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.openFile",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveChange",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveChangeUp",
+          "when": "resourceScheme == sonara-review"
+        },
+        {
+          "command": "sonara.review.moveChangeDown",
+          "when": "resourceScheme == sonara-review"
+        },
+        {
+          "command": "sonara.review.moveChangeToLevel",
+          "when": "resourceScheme == sonara-review"
+        },
+        {
+          "command": "sonara.review.moveUp",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveDown",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveToLevel",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveAllUp",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveAllDown",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveAllToLevel",
+          "when": "false"
+        },
         {
           "command": "sonara.voice.cancelRecording",
           "when": "sonara.voice.isRecording"
@@ -310,18 +520,24 @@
           "order": 2
         },
         {
+          "type": "tree",
+          "id": "sonara.review",
+          "name": "Review",
+          "order": 3
+        },
+        {
           "type": "webview",
           "id": "sonara.voice.log",
           "name": "Voice Log",
           "icon": "media/icons/voice-log.svg",
-          "order": 3
+          "order": 4
         },
         {
           "type": "webview",
           "id": "sonara.voice.transcripts",
           "name": "Voice Transcripts",
           "icon": "media/icons/voice-transcripts.svg",
-          "order": 4
+          "order": 5
         }
       ]
     },
@@ -456,6 +672,11 @@
           "minimum": 5,
           "maximum": 600,
           "description": "How often (seconds) time tracker writes pending ticks to disk."
+        },
+        "sonara.review.debugLog": {
+          "type": "boolean",
+          "default": false,
+          "description": "Write per-file and per-git-process details of Review scans and moves to the Sonara Review output. Summaries, refusals and errors are always written."
         }
       }
     }
