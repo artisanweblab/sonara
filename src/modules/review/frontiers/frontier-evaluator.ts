@@ -28,6 +28,8 @@ export class FrontierEvaluator {
             return {
                 before: text,
                 after: text,
+                isBeforeMissing: false,
+                isAfterMissing: false,
                 changes: hasChange ? [{ id: fileChangeId(), line: 0, lineCount: 0, label: 'whole file' }] : [],
                 generation: scanGeneration(file, head),
             };
@@ -44,6 +46,8 @@ export class FrontierEvaluator {
             return {
                 before: describeOpaque(layerHash(stack.content[rank + 1]), stack.modes[rank + 1]),
                 after: describeOpaque(layerHash(stack.content[rank]), stack.modes[rank]),
+                isBeforeMissing: stack.modes[rank + 1] === MISSING_MODE,
+                isAfterMissing: stack.modes[rank] === MISSING_MODE,
                 changes,
                 generation: stack.generation,
             };
@@ -51,6 +55,8 @@ export class FrontierEvaluator {
         return {
             before: joinSegments(stack.content[rank + 1]),
             after: joinSegments(stack.content[rank]),
+            isBeforeMissing: stack.modes[rank + 1] === MISSING_MODE,
+            isAfterMissing: stack.modes[rank] === MISSING_MODE,
             changes,
             generation: stack.generation,
         };

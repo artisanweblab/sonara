@@ -133,6 +133,7 @@ export class ChangeScanner {
             hasStagedChange: stagedChange !== undefined,
             worktreeState: worktree ? worktree.state : gitlinkWorktreeState(unstagedChange, indexState),
             indexState,
+            isInHead: raw[0] ? raw[0].srcMode !== ABSENT_MODE : true,
             isUnreadable: worktree?.state === UNREADABLE_STATE,
         };
         if (worktree?.state === UNREADABLE_STATE) {
@@ -158,6 +159,7 @@ export class ChangeScanner {
             hasStagedChange: false,
             hasNewChange: true,
             indexState: MISSING_MODE,
+            isInHead: false,
             isUnreadable: false,
         };
         if (entry.endsWith('/')) {

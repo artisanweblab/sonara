@@ -25,9 +25,9 @@ Manage project tasks as plain markdown files - they travel with your repository.
 
 Review uncommitted changes in steps instead of two buckets (changed / staged). Built for code written by AI agents: mark what you have already read, and anything the agent changes afterwards comes back as new.
 
-- Five levels, from top to bottom: **Ready to commit**, **Verified**, **Looked**, **Seen**, **New**. Ready to commit is the real git stage; the other levels are kept by the extension
-- The panel lists exactly the files git reports as changed, grouped by level, as a folder tree or a flat list (follows `scm.defaultViewMode` and `scm.compactFolders`). Each level shows `files / changes`
-- Move a folder, a file, or a whole level with **Move Up**, **Move Down**, **Move to Level...**; any level can be chosen directly. Moving to Ready to commit stages the changes, moving down from it unstages them
+- Five levels, from top to bottom: **Staged Changes**, **Verified**, **Read**, **Queued**, **New**. Staged Changes is the real git stage; the other levels are kept by the extension
+- The panel lists exactly the files git reports as changed, grouped by level, as a folder tree or a flat list (`sonara.review.viewMode` and `sonara.review.compactFolders`). Each level shows `files: N · changes: M`
+- Move a folder, a file, or a whole level with **Move Up**, **Move Down**, or straight to a level with **Move to Read**, **Move to Verified** and the rest, right in the context menu. Moving to Staged Changes stages the changes, moving down from it unstages them
 - Click a file to open the changes of that level only: the left side is `HEAD` plus all levels above, the right side adds this level. Both sides are read-only; **Open File** opens the real file for editing
 - Move a single change from the level diff with the CodeLens above it or with `Sonara: Move Change Up` / `Move Change Down` / `Move Change to Level...` for the change under the cursor
 - `Sonara: Next New Change` / `Previous New Change` walk through everything on New across files

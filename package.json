@@ -105,6 +105,30 @@
         "category": "Sonara"
       },
       {
+        "command": "sonara.review.viewAsTree",
+        "title": "View as Tree",
+        "category": "Sonara",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "sonara.review.viewAsList",
+        "title": "View as List",
+        "category": "Sonara",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "sonara.review.expandFolder",
+        "title": "Expand Folder",
+        "category": "Sonara",
+        "icon": "$(expand-all)"
+      },
+      {
+        "command": "sonara.review.collapseFolder",
+        "title": "Collapse Folder",
+        "category": "Sonara",
+        "icon": "$(collapse-all)"
+      },
+      {
         "command": "sonara.review.moveUp",
         "title": "Move Up",
         "category": "Sonara",
@@ -117,8 +141,28 @@
         "icon": "$(arrow-down)"
       },
       {
-        "command": "sonara.review.moveToLevel",
-        "title": "Move to Level...",
+        "command": "sonara.review.moveToStaged",
+        "title": "Move to Staged Changes",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.moveToVerified",
+        "title": "Move to Verified",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.moveToRead",
+        "title": "Move to Read",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.moveToQueued",
+        "title": "Move to Queued",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.moveToNew",
+        "title": "Move to New",
         "category": "Sonara"
       },
       {
@@ -134,8 +178,28 @@
         "icon": "$(arrow-down)"
       },
       {
-        "command": "sonara.review.moveAllToLevel",
-        "title": "Move All to Level...",
+        "command": "sonara.review.moveAllToStaged",
+        "title": "Move All to Staged Changes",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.moveAllToVerified",
+        "title": "Move All to Verified",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.moveAllToRead",
+        "title": "Move All to Read",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.moveAllToQueued",
+        "title": "Move All to Queued",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.moveAllToNew",
+        "title": "Move All to New",
         "category": "Sonara"
       },
       {
@@ -314,6 +378,16 @@
           "group": "1_actions@1"
         },
         {
+          "command": "sonara.review.viewAsTree",
+          "when": "view == sonara.review && sonara.review.viewMode == list",
+          "group": "navigation@0"
+        },
+        {
+          "command": "sonara.review.viewAsList",
+          "when": "view == sonara.review && sonara.review.viewMode == tree",
+          "group": "navigation@0"
+        },
+        {
           "command": "sonara.review.refresh",
           "when": "view == sonara.review",
           "group": "navigation@1"
@@ -378,14 +452,24 @@
       ],
       "view/item/context": [
         {
+          "command": "sonara.review.expandFolder",
+          "when": "view == sonara.review && viewItem =~ /^reviewFolder\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "sonara.review.collapseFolder",
+          "when": "view == sonara.review && viewItem =~ /^reviewFolder\\./",
+          "group": "inline@2"
+        },
+        {
           "command": "sonara.review.moveUp",
           "when": "view == sonara.review && viewItem =~ /^review(Folder|File)\\.(new|queued|read|verified)$/",
-          "group": "inline@1"
+          "group": "inline@3"
         },
         {
           "command": "sonara.review.moveDown",
           "when": "view == sonara.review && viewItem =~ /^review(Folder|File)\\.(queued|read|verified|staged)$/",
-          "group": "inline@2"
+          "group": "inline@4"
         },
         {
           "command": "sonara.review.moveUp",
@@ -398,9 +482,29 @@
           "group": "1_move@2"
         },
         {
-          "command": "sonara.review.moveToLevel",
-          "when": "view == sonara.review && viewItem =~ /^review(Folder|File)\\./",
-          "group": "1_move@3"
+          "command": "sonara.review.moveToStaged",
+          "when": "view == sonara.review && viewItem =~ /^review(Folder|File)\\.(new|queued|read|verified)$/",
+          "group": "2_moveTo@1"
+        },
+        {
+          "command": "sonara.review.moveToVerified",
+          "when": "view == sonara.review && viewItem =~ /^review(Folder|File)\\.(new|queued|read|staged)$/",
+          "group": "2_moveTo@2"
+        },
+        {
+          "command": "sonara.review.moveToRead",
+          "when": "view == sonara.review && viewItem =~ /^review(Folder|File)\\.(new|queued|verified|staged)$/",
+          "group": "2_moveTo@3"
+        },
+        {
+          "command": "sonara.review.moveToQueued",
+          "when": "view == sonara.review && viewItem =~ /^review(Folder|File)\\.(new|read|verified|staged)$/",
+          "group": "2_moveTo@4"
+        },
+        {
+          "command": "sonara.review.moveToNew",
+          "when": "view == sonara.review && viewItem =~ /^review(Folder|File)\\.(queued|read|verified|staged)$/",
+          "group": "2_moveTo@5"
         },
         {
           "command": "sonara.review.moveAllUp",
@@ -423,14 +527,42 @@
           "group": "1_move@2"
         },
         {
-          "command": "sonara.review.moveAllToLevel",
-          "when": "view == sonara.review && viewItem =~ /^reviewLevel\\./",
-          "group": "1_move@3"
+          "command": "sonara.review.moveAllToStaged",
+          "when": "view == sonara.review && viewItem =~ /^reviewLevel\\.(new|queued|read|verified)$/",
+          "group": "2_moveTo@1"
+        },
+        {
+          "command": "sonara.review.moveAllToVerified",
+          "when": "view == sonara.review && viewItem =~ /^reviewLevel\\.(new|queued|read|staged)$/",
+          "group": "2_moveTo@2"
+        },
+        {
+          "command": "sonara.review.moveAllToRead",
+          "when": "view == sonara.review && viewItem =~ /^reviewLevel\\.(new|queued|verified|staged)$/",
+          "group": "2_moveTo@3"
+        },
+        {
+          "command": "sonara.review.moveAllToQueued",
+          "when": "view == sonara.review && viewItem =~ /^reviewLevel\\.(new|read|verified|staged)$/",
+          "group": "2_moveTo@4"
+        },
+        {
+          "command": "sonara.review.moveAllToNew",
+          "when": "view == sonara.review && viewItem =~ /^reviewLevel\\.(queued|read|verified|staged)$/",
+          "group": "2_moveTo@5"
         }
       ],
       "commandPalette": [
         {
           "command": "sonara.review.openLevelDiff",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.expandFolder",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.collapseFolder",
           "when": "false"
         },
         {
@@ -462,7 +594,23 @@
           "when": "false"
         },
         {
-          "command": "sonara.review.moveToLevel",
+          "command": "sonara.review.moveToStaged",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveToVerified",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveToRead",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveToQueued",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveToNew",
           "when": "false"
         },
         {
@@ -474,7 +622,23 @@
           "when": "false"
         },
         {
-          "command": "sonara.review.moveAllToLevel",
+          "command": "sonara.review.moveAllToStaged",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveAllToVerified",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveAllToRead",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveAllToQueued",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.moveAllToNew",
           "when": "false"
         },
         {
@@ -677,6 +841,18 @@
           "minimum": 5,
           "maximum": 600,
           "description": "How often (seconds) time tracker writes pending ticks to disk."
+        },
+        "sonara.review.viewMode": {
+          "type": "string",
+          "default": "tree",
+          "enum": ["tree", "list"],
+          "enumDescriptions": ["Group files by folder", "Show a flat list of files"],
+          "description": "How the Review panel lays out files."
+        },
+        "sonara.review.compactFolders": {
+          "type": "boolean",
+          "default": true,
+          "description": "Render a chain of folders with a single child as one row in the Review panel."
         },
         "sonara.review.debugLog": {
           "type": "boolean",

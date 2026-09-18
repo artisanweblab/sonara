@@ -115,7 +115,7 @@ export class ReviewService implements vscode.Disposable {
         this.collector = new BlobGarbageCollector(this.blobs, this.store, engine.journal, this.health, this.logger, () => this.runningTasks > 0 || engine.repository.isBusy());
         this.disposables.push(new vscode.Disposable(() => this.collector?.dispose()), new vscode.Disposable(() => engine.pool.dispose()));
         await this.recover(engine);
-        this.watcher.watchGitOperations(await engine.gitState.resolveGitDir(), await engine.gitState.resolveCommonDir());
+        this.watcher.watchGitOperations(await engine.gitState.resolveGitDir(), await engine.gitState.resolveCommonDir(), await engine.gitState.indexFile());
         this.isStarted = true;
         this.idleReason = '';
         this.disposables.push(this.watcher.onDidChange(change => this.onRepositoryChange(change)));

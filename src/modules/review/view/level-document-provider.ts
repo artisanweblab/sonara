@@ -77,6 +77,14 @@ export class LevelDocumentProvider implements vscode.TextDocumentContentProvider
         return document?.changes[0]?.line ?? 0;
     }
 
+    async sideToShow(repoPath: string, level: ReviewLevel): Promise<LevelDocumentSide | null> {
+        const document = await this.request(repoPath, level);
+        if (!document || document.isBeforeMissing === document.isAfterMissing) {
+            return null;
+        }
+        return document.isBeforeMissing ? 'after' : 'before';
+    }
+
     private request(repoPath: string, level: ReviewLevel): Promise<LevelDocument | null> {
         const service = this.holder.get();
         if (!service) {

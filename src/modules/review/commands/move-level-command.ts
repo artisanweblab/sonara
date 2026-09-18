@@ -6,7 +6,7 @@ import { LEVEL_LABELS, REVIEW_LEVELS, REVIEW_LEVELS_TOP_DOWN, ReviewLevel, revie
 import { ReviewNode } from '../view/review-node';
 import { ReviewTreeProvider } from '../view/review-tree-provider';
 
-export type MoveDirection = 'up' | 'down' | 'pick';
+export type MoveDirection = 'up' | 'down' | 'pick' | ReviewLevel;
 
 interface LevelPickItem extends vscode.QuickPickItem {
     level: ReviewLevel;
@@ -15,6 +15,13 @@ interface LevelPickItem extends vscode.QuickPickItem {
 export function shiftedLevel(level: ReviewLevel, direction: 'up' | 'down'): ReviewLevel | null {
     const rank = reviewLevelRank(level) + (direction === 'up' ? 1 : -1);
     return rank >= 0 && rank < REVIEW_LEVELS.length ? REVIEW_LEVELS[rank] : null;
+}
+
+function targetLevel(direction: MoveDirection, current: ReviewLevel, picked: ReviewLevel | null): ReviewLevel | null {
+    if (direction === 'pick') {
+        return picked;
+    }
+    return direction === 'up' || direction === 'down' ? shiftedLevel(current, direction) : direction;
 }
 
 export async function pickLevel(current: ReviewLevel): Promise<ReviewLevel | null> {
@@ -52,7 +59,7 @@ export async function executeMoveLevel(
     const byTarget = new Map<ReviewLevel, LevelSelection[]>();
     const skipped: string[] = [];
     for (const { current, selections } of frozen) {
-        const target = direction === 'pick' ? picked : shiftedLevel(current.level, direction);
+        const target = targetLevel(direction, current.level, picked);
         if (!target || target === current.level) {
             skipped.push(!target
                 ? `there is no level ${direction === 'up' ? 'above' : 'below'} ${LEVEL_LABELS[current.level]}`

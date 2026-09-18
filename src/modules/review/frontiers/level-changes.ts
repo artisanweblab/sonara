@@ -1,5 +1,5 @@
 import { NO_RECORD } from '../model/file-generation';
-import { MISSING_MODE, UNMERGED_STATE, describeModeChange } from '../model/file-state';
+import { MISSING_MODE, REGULAR_MODE, UNMERGED_STATE, describeModeChange, modeOfState } from '../model/file-state';
 import { hunkContext, hunkKey } from '../model/hunk-key';
 import { levelHunks } from '../model/layer-stack';
 import { toHunk } from '../model/line-diff';
@@ -28,8 +28,18 @@ export function fileChangeId(): string {
     return `${FILE_CHANGE_KEY}#0`;
 }
 
-function fileAtom(path: string, level: ReviewLevel): ReviewAtomState {
-    return { level, atom: { path, id: fileChangeId() } };
+function fileAtom(path: string, level: ReviewLevel, status: string): ReviewAtomState {
+    return { level, status, atom: { path, id: fileChangeId() } };
+}
+
+function statusOf(below: string, above: string, isUnmerged: boolean): string {
+    if (isUnmerged) {
+        return 'U';
+    }
+    if (below === MISSING_MODE) {
+        return 'A';
+    }
+    return above === MISSING_MODE ? 'D' : 'M';
 }
 
 export function scanGeneration(file: ScannedFile, head: string): FileGeneration {
@@ -41,6 +51,7 @@ export function levelChanges(path: string, stack: FileStack, level: ReviewLevel)
     const below = stack.modes[rank + 1];
     const above = stack.modes[rank];
     const modeLabel = below !== above ? describeModeChange(below, above) : null;
+    const status = statusOf(below, above, false);
     if (stack.kind === 'opaque') {
         const contentChanged = layerHash(stack.content[rank + 1]) !== layerHash(stack.content[rank]);
         if (!contentChanged && !modeLabel) {
@@ -49,7 +60,7 @@ export function levelChanges(path: string, stack: FileStack, level: ReviewLevel)
         const label = contentChanged && modeLabel && below !== MISSING_MODE && above !== MISSING_MODE
             ? `content changed, ${modeLabel}`
             : modeLabel ?? 'content changed';
-        return [{ id: fileChangeId(), range: null, label, state: fileAtom(path, level) }];
+        return [{ id: fileChangeId(), range: null, label, state: fileAtom(path, level, status) }];
     }
     const before = stack.content[rank + 1];
     const after = stack.content[rank];
@@ -61,10 +72,10 @@ export function levelChanges(path: string, stack: FileStack, level: ReviewLevel)
         const ordinal = occurrences.get(key) ?? 0;
         occurrences.set(key, ordinal + 1);
         const id = `${key}#${ordinal}`;
-        return { id, range, label: null, state: { level, atom: { path, id } } };
+        return { id, range, label: null, state: { level, status, atom: { path, id } } };
     });
     if (modeLabel) {
-        changes.push({ id: fileChangeId(), range: null, label: modeLabel, state: fileAtom(path, level) });
+        changes.push({ id: fileChangeId(), range: null, label: modeLabel, state: fileAtom(path, level, status) });
     }
     return changes;
 }
@@ -75,13 +86,20 @@ export function stackAtoms(path: string, stack: FileStack): ReviewAtomState[] {
 
 export function gitAtoms(file: ScannedFile): ReviewAtomState[] {
     const atoms: ReviewAtomState[] = [];
+    const isUnmerged = file.indexState === UNMERGED_STATE;
+    const indexMode = modeOfState(file.indexState) ?? MISSING_MODE;
+    const worktreeMode = modeOfState(file.worktreeState) ?? MISSING_MODE;
+    const stagedStatus = statusOf(file.isInHead ? REGULAR_MODE : MISSING_MODE, indexMode, isUnmerged);
+    const newStatus = statusOf(indexMode, worktreeMode, isUnmerged);
     const add = (level: ReviewLevel, hasChange: boolean, hunks: ScannedFile['stagedHunks']): void => {
+        const status = level === 'staged' ? stagedStatus : newStatus;
         hunks.forEach((_hunk, index) => atoms.push({
             level,
+            status,
             atom: { path: file.path, id: `git:${level}:${index}` },
         }));
         if (hasChange && hunks.length === 0) {
-            atoms.push(fileAtom(file.path, level));
+            atoms.push(fileAtom(file.path, level, status));
         }
     };
     add('staged', file.hasStagedChange && file.indexState !== UNMERGED_STATE, file.kind === 'text' ? file.stagedHunks : []);

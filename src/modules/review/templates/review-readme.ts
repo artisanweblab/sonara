@@ -47,7 +47,7 @@ How to use it:
 
 The Sonara sidebar has a **Review** panel. It lists exactly the files git reports as changed, grouped by level, with \`files / changes\` per level.
 
-- **Move Up**, **Move Down**, **Move to Level...** on a level, folder or file move all its changes on that level. Moving to \`staged\` stages them, moving down from \`staged\` unstages them.
+- **Move Up**, **Move Down**, and the direct **Move to \`<level>\`** entries of the context menu on a level, folder or file move all its changes on that level. Moving to \`staged\` stages them, moving down from \`staged\` unstages them.
 - Clicking a file opens the changes of that level only, read-only: the left side is \`HEAD\` plus all levels above, the right side adds this level. **Open File** opens the real file.
 - A single change is moved from that diff: the CodeLens above it, or the commands \`Sonara: Move Change Up\`, \`Sonara: Move Change Down\`, \`Sonara: Move Change to Level...\` for the change under the cursor.
 - \`Sonara: Next New Change\` and \`Sonara: Previous New Change\` walk through everything on \`new\`.

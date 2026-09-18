@@ -21,6 +21,12 @@ export class ReviewDiffOpener {
         const after = LevelDocumentProvider.uriFor({ repoPath, level, side: 'after' });
         const title = `${path.posix.basename(repoPath)} (${LEVEL_LABELS[level]})`;
         const line = revealLine ?? await this.documents.firstChangeLine(repoPath, level);
+        const single = await this.documents.sideToShow(repoPath, level);
+        if (single) {
+            const uri = single === 'after' ? after : before;
+            await vscode.commands.executeCommand('vscode.open', uri, { selection: selectionAt(line), preview: true });
+            return;
+        }
         await vscode.commands.executeCommand('vscode.diff', before, after, title, { selection: selectionAt(line), preview: true });
         void this.codeLensPrompt.showIfNeeded();
     }

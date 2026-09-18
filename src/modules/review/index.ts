@@ -23,13 +23,19 @@ import { ReviewStatusBar } from './view/review-status-bar';
 
 const FOCUS_COMMAND = `${ReviewTreeProvider.VIEW_ID}.focus`;
 
+function levelMoveCommands(): ReadonlyArray<[string, MoveDirection]> {
+    return REVIEW_LEVELS.flatMap<[string, MoveDirection]>(level => {
+        const suffix = `${level.slice(0, 1).toUpperCase()}${level.slice(1)}`;
+        return [[`sonara.review.moveTo${suffix}`, level], [`sonara.review.moveAllTo${suffix}`, level]];
+    });
+}
+
 const MOVE_COMMANDS: ReadonlyArray<[string, MoveDirection]> = [
     ['sonara.review.moveUp', 'up'],
     ['sonara.review.moveDown', 'down'],
-    ['sonara.review.moveToLevel', 'pick'],
     ['sonara.review.moveAllUp', 'up'],
     ['sonara.review.moveAllDown', 'down'],
-    ['sonara.review.moveAllToLevel', 'pick'],
+    ...levelMoveCommands(),
 ];
 
 const CHANGE_AT_CURSOR_COMMANDS: ReadonlyArray<[string, ChangeMoveDirection]> = [
@@ -58,6 +64,10 @@ function describeArguments(args: readonly unknown[]): string {
     return args.map(argument => Array.isArray(argument)
         ? `[${argument.map(describeArgument).join(', ')}]`
         : describeArgument(argument)).join(' ');
+}
+
+async function setViewMode(mode: 'tree' | 'list'): Promise<void> {
+    await vscode.workspace.getConfiguration('sonara.review').update('viewMode', mode, vscode.ConfigurationTarget.Global);
 }
 
 function loggedCommand(logger: ReviewLogger, command: string, handler: (...args: unknown[]) => unknown): vscode.Disposable {
@@ -89,6 +99,10 @@ export function registerReviewModule(context: vscode.ExtensionContext, activePro
         canSelectMany: true,
         showCollapseAll: true,
     });
+    context.subscriptions.push(
+        treeView.onDidExpandElement(event => provider.rememberExpanded(event.element, true)),
+        treeView.onDidCollapseElement(event => provider.rememberExpanded(event.element, false)),
+    );
     const updateMessage = (): void => {
         const service = holder.get();
         treeView.message = service && !service.isActive() && service.getIdleReason() ? inactiveMessage(service) : undefined;
@@ -161,6 +175,10 @@ export function registerReviewModule(context: vscode.ExtensionContext, activePro
             loggedCommand(logger, command, () => executeMoveChangeAtCursor(holder, documents, direction))),
         loggedCommand(logger, 'sonara.review.nextNewChange', () => executeNavigateNewChange(holder, provider, opener, 1)),
         loggedCommand(logger, 'sonara.review.previousNewChange', () => executeNavigateNewChange(holder, provider, opener, -1)),
+        loggedCommand(logger, 'sonara.review.viewAsTree', () => setViewMode('tree')),
+        loggedCommand(logger, 'sonara.review.viewAsList', () => setViewMode('list')),
+        loggedCommand(logger, 'sonara.review.expandFolder', (node: unknown) => provider.setSubtreeExpanded(node as ReviewNode, true)),
+        loggedCommand(logger, 'sonara.review.collapseFolder', (node: unknown) => provider.setSubtreeExpanded(node as ReviewNode, false)),
         ...MOVE_COMMANDS.map(([command, direction]) => loggedCommand(
             logger,
             command,

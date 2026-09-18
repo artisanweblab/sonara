@@ -5,6 +5,7 @@ export interface LevelFileEntry {
     displayPath: string;
     states: ReviewAtomState[];
     generation: FileGeneration;
+    status: string;
 }
 
 export interface LevelNode {
@@ -29,6 +30,7 @@ export interface FileNode {
     displayPath: string;
     states: ReviewAtomState[];
     generation: FileGeneration;
+    status: string;
 }
 
 export type ReviewNode = LevelNode | FolderNode | FileNode;

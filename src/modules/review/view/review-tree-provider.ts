@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { ReviewServiceHolder } from '../review-service-holder';
 import { LEVEL_LABELS, REVIEW_LEVELS_TOP_DOWN, ReviewLevel } from '../types';
-import { LevelFileEntry, LevelNode, ReviewNode } from './review-node';
+import { FolderNode, LevelFileEntry, LevelNode, ReviewNode } from './review-node';
 import { LevelSelection } from '../review-level-mover';
 import { TreeLayout, buildLevelChildren, collectFiles, collectStates } from './review-tree-builder';
 
@@ -10,25 +10,65 @@ export const OPEN_LEVEL_DIFF_COMMAND = 'sonara.review.openLevelDiff';
 
 const EXPANDED_FOLDER_DEPTH = 1;
 
+function folderKey(level: ReviewLevel, displayPath: string): string {
+    return `${level}/${displayPath}`;
+}
+
+function expansionKey(node: ReviewNode): string | null {
+    if (node.type === 'level') {
+        return `level/${node.level}`;
+    }
+    return node.type === 'folder' ? folderKey(node.level, node.displayPath) : null;
+}
+
 export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, vscode.Disposable {
     static readonly VIEW_ID = 'sonara.review';
 
     private readonly emitter = new vscode.EventEmitter<ReviewNode | undefined>();
     readonly onDidChangeTreeData = this.emitter.event;
     private readonly disposables: vscode.Disposable[] = [];
+    private readonly expansion = new Map<string, boolean>();
+    private readonly revisions = new Map<string, number>();
 
     constructor(private readonly holder: ReviewServiceHolder) {
         this.disposables.push(
             holder.onDidChange(() => this.refresh()),
             vscode.workspace.onDidChangeConfiguration(event => {
-                if (event.affectsConfiguration('scm.defaultViewMode') || event.affectsConfiguration('scm.compactFolders')) {
+                if (event.affectsConfiguration('sonara.review.viewMode') || event.affectsConfiguration('sonara.review.compactFolders')) {
+                    this.publishViewMode();
                     this.refresh();
                 }
             }),
         );
+        this.publishViewMode();
     }
 
     refresh(): void {
+        this.emitter.fire(undefined);
+    }
+
+    rememberExpanded(node: ReviewNode, isExpanded: boolean): void {
+        const key = expansionKey(node);
+        if (key) {
+            this.expansion.set(key, isExpanded);
+        }
+    }
+
+    setSubtreeExpanded(node: ReviewNode, isExpanded: boolean): void {
+        if (node.type !== 'folder') {
+            return;
+        }
+        const apply = (folder: FolderNode): void => {
+            const key = folderKey(folder.level, folder.displayPath);
+            this.expansion.set(key, isExpanded);
+            this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1);
+            for (const child of folder.children) {
+                if (child.type === 'folder') {
+                    apply(child);
+                }
+            }
+        };
+        apply(node);
         this.emitter.fire(undefined);
     }
 
@@ -41,10 +81,8 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
             return REVIEW_LEVELS_TOP_DOWN.map(level => ({ type: 'level', level, entries: this.entriesFor(level) }));
         }
         switch (node.type) {
-            case 'level': {
-                const config = vscode.workspace.getConfiguration('scm');
-                return buildLevelChildren(node.level, node.entries, this.currentLayout(), config.get<boolean>('compactFolders', true));
-            }
+            case 'level':
+                return buildLevelChildren(node.level, node.entries, this.currentLayout(), this.isCompactFolders());
             case 'folder':
                 return node.children;
             case 'file':
@@ -57,11 +95,13 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
             case 'level':
                 return this.levelItem(node);
             case 'folder': {
-                const state = node.depth <= EXPANDED_FOLDER_DEPTH
+                const key = folderKey(node.level, node.displayPath);
+                const isExpanded = this.expansion.get(key) ?? node.depth <= EXPANDED_FOLDER_DEPTH;
+                const state = isExpanded
                     ? vscode.TreeItemCollapsibleState.Expanded
                     : vscode.TreeItemCollapsibleState.Collapsed;
                 const item = new vscode.TreeItem(node.label, state);
-                item.id = `folder/${node.level}/${node.displayPath}`;
+                item.id = `folder/${key}#${this.revisions.get(key) ?? 0}`;
                 item.iconPath = vscode.ThemeIcon.Folder;
                 item.resourceUri = vscode.Uri.file(this.absoluteDisplayPath(node.displayPath));
                 item.contextValue = `reviewFolder.${node.level}`;
@@ -73,7 +113,8 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
                 item.iconPath = vscode.ThemeIcon.File;
                 item.resourceUri = vscode.Uri.file(this.absoluteDisplayPath(node.displayPath));
                 const directory = path.posix.dirname(node.displayPath);
-                item.description = this.currentLayout() === 'list' && directory !== '.' ? directory : undefined;
+                const location = this.currentLayout() === 'list' && directory !== '.' ? directory : '';
+                item.description = [node.status, location].filter(part => part !== '').join(' · ') || undefined;
                 item.tooltip = node.displayPath;
                 item.contextValue = `reviewFile.${node.level}`;
                 item.command = { command: OPEN_LEVEL_DIFF_COMMAND, title: 'Open Level Changes', arguments: [node.path, node.level] };
@@ -83,8 +124,7 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
     }
 
     orderedFiles(level: ReviewLevel): string[] {
-        const config = vscode.workspace.getConfiguration('scm');
-        const nodes = buildLevelChildren(level, this.entriesFor(level), this.currentLayout(), config.get<boolean>('compactFolders', true));
+        const nodes = buildLevelChildren(level, this.entriesFor(level), this.currentLayout(), this.isCompactFolders());
         const paths: string[] = [];
         const visit = (list: readonly ReviewNode[]): void => {
             for (const node of list) {
@@ -109,12 +149,13 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
         const states = collectStates(node);
         const count = states.length;
         const fileCount = new Set(states.map(entry => entry.atom.path)).size;
+        const isExpanded = this.expansion.get(`level/${level}`) ?? level === 'new';
         const state = count === 0
             ? vscode.TreeItemCollapsibleState.None
-            : level === 'new' ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
+            : isExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
         const item = new vscode.TreeItem(LEVEL_LABELS[level], state);
         item.id = `level/${level}`;
-        item.description = `${fileCount} / ${count}`;
+        item.description = `files: ${fileCount} · changes: ${count}`;
         item.tooltip = `${fileCount} files, ${count} changes`;
         item.contextValue = `reviewLevel.${level}`;
         return item;
@@ -133,13 +174,21 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
                 continue;
             }
             const displayPath = prefix && file.path.startsWith(`${prefix}/`) ? file.path.slice(prefix.length + 1) : file.path;
-            entries.push({ path: file.path, displayPath, states, generation: file.generation });
+            entries.push({ path: file.path, displayPath, states, generation: file.generation, status: states[0].status });
         }
         return entries;
     }
 
     private currentLayout(): TreeLayout {
-        return vscode.workspace.getConfiguration('scm').get<string>('defaultViewMode') === 'tree' ? 'tree' : 'list';
+        return vscode.workspace.getConfiguration('sonara.review').get<string>('viewMode') === 'list' ? 'list' : 'tree';
+    }
+
+    private isCompactFolders(): boolean {
+        return vscode.workspace.getConfiguration('sonara.review').get<boolean>('compactFolders', true);
+    }
+
+    private publishViewMode(): void {
+        void vscode.commands.executeCommand('setContext', 'sonara.review.viewMode', this.currentLayout());
     }
 
     private absoluteDisplayPath(displayPath: string): string {

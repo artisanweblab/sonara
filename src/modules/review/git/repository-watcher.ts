@@ -7,6 +7,7 @@ import { OPERATION_MARKERS } from './git-repository-state';
 
 const DEBOUNCE_MS = 500;
 const STASH_REFERENCES = ['refs/stash', 'logs/refs/stash'];
+const COMMIT_REFERENCES = ['refs/heads/**', 'packed-refs'];
 
 export interface RepositoryChange {
     isFull: boolean;
@@ -72,7 +73,7 @@ export class RepositoryWatcher implements vscode.Disposable {
         return this.attachGitExtension();
     }
 
-    watchGitOperations(gitDir: string, commonDir: string): void {
+    watchGitOperations(gitDir: string, commonDir: string, indexFile: string): void {
         const markers = vscode.workspace.createFileSystemWatcher(
             new vscode.RelativePattern(vscode.Uri.file(gitDir), `{${OPERATION_MARKERS.join(',')}}`),
             true,
@@ -84,7 +85,30 @@ export class RepositoryWatcher implements vscode.Disposable {
             this.isStashPending = true;
             this.schedule();
         };
+        const index = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(path.dirname(indexFile)), path.basename(indexFile)));
+        const onIndex = (): void => {
+            this.isRecheckPending = true;
+            this.schedule();
+        };
+        const head = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(gitDir), 'HEAD'));
+        const references = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(commonDir), `{${COMMIT_REFERENCES.join(',')}}`));
+        const onCommit = (uri: vscode.Uri): void => {
+            this.logger.info(`Watcher: ${path.basename(uri.fsPath)} changed, full rescan queued`);
+            this.isFullPending = true;
+            this.schedule();
+        };
         this.disposables.push(
+            index,
+            index.onDidCreate(onIndex),
+            index.onDidChange(onIndex),
+            index.onDidDelete(onIndex),
+            head,
+            head.onDidCreate(onCommit),
+            head.onDidChange(onCommit),
+            references,
+            references.onDidCreate(onCommit),
+            references.onDidChange(onCommit),
+            references.onDidDelete(onCommit),
             markers,
             markers.onDidDelete(uri => {
                 this.logger.info(`Watcher: git operation marker ${path.basename(uri.fsPath)} removed, full rescan queued`);

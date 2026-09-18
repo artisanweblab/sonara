@@ -58,6 +58,7 @@ export interface ScannedFile {
     hasNewChange: boolean;
     worktreeState: string;
     indexState: string;
+    isInHead: boolean;
     isUnreadable: boolean;
 }
 
@@ -107,6 +108,8 @@ export interface LevelChange {
 export interface LevelDocument {
     before: string;
     after: string;
+    isBeforeMissing: boolean;
+    isAfterMissing: boolean;
     changes: LevelChange[];
     generation: FileGeneration;
 }
@@ -114,6 +117,7 @@ export interface LevelDocument {
 export interface ReviewAtomState {
     atom: ReviewAtom;
     level: ReviewLevel;
+    status: string;
 }
 
 export interface ReviewFileState {
