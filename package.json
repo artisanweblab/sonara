@@ -757,7 +757,7 @@
         {
           "id": "sonara",
           "title": "Sonara",
-          "icon": "media/icons/sonara.svg"
+          "icon": "media/icons/sonara-mark.svg"
         }
       ]
     },
@@ -774,6 +774,7 @@
           "type": "tree",
           "id": "sonara.review",
           "name": "Review",
+          "icon": "media/icons/review.svg",
           "order": 3
         },
         {
