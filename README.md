@@ -233,4 +233,4 @@ Run `make help` for all targets.
 
 ## License
 
-See [LICENSE](./LICENSE).
+See [LICENSE](./LICENSE). The bundled Lucide icons are covered by [NOTICE](./NOTICE).
