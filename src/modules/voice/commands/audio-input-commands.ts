@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { registerVoiceCommand } from './voice-command';
 
 import { CommandDeps } from './types';
 import { VOICE_CONFIG_SECTION } from '../constants';
@@ -11,7 +12,7 @@ export function registerAudioInputCommands(deps: CommandDeps): void {
     const { extensionContext, recorder } = deps;
 
     extensionContext.subscriptions.push(
-        vscode.commands.registerCommand('sonara.voice.changeAudioInput', async () => {
+        registerVoiceCommand(deps, 'sonara.voice.changeAudioInput', async () => {
             const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
             const currentId = config.get<string | null>('audioInput', null);
 

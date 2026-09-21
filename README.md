@@ -20,6 +20,7 @@ Manage project tasks as plain markdown files - they travel with your repository.
 - Create, edit, and delete tasks without leaving VS Code
 - "Copy Agent Context" puts a task's details on the clipboard for pasting into an AI assistant
 - Stored under `.vscode/sonara/tasks/` - commit them with your code or keep them local
+- Every command and panel action is logged to the **Sonara Tasks** output channel, with the error and its stack trace when something fails
 
 ### Review
 
@@ -29,11 +30,12 @@ Review uncommitted changes in steps instead of two buckets (changed / staged). B
 - The panel lists exactly the files git reports as changed, grouped by level, as a folder tree or a flat list (`sonara.review.viewMode` and `sonara.review.compactFolders`). Each level shows `files: N · changes: M`
 - Move a folder, a file, or a whole level with **Move Up**, **Move Down**, or straight to a level with **Move to Read**, **Move to Verified** and the rest, right in the context menu. Moving to Staged Changes stages the changes, moving down from it unstages them
 - Click a file to open the changes of that level only: the left side is `HEAD` plus all levels above, the right side adds this level. Both sides are read-only; **Open File** opens the real file for editing
+- The context menu of a file or folder also has the usual actions: **Open Containing Folder**, **Copy Path**, **Copy Relative Path** and **Delete** (moves it to the Trash after a confirmation; a folder goes with everything in it, including files without changes). Copy and Delete work on every selected row
 - Move a single change from the level diff with the CodeLens above it or with `Sonara: Move Change Up` / `Move Change Down` / `Move Change to Level...` for the change under the cursor
 - `Sonara: Next New Change` / `Previous New Change` walk through everything on New across files
 - Any edit - yours or an agent's - lands on New and shows as the difference from the version you accepted; the accepted version stays on its level
 - Staging or unstaging through the regular Source Control view keeps your levels. Committed parts leave the panel; after `git stash` and `git stash pop` the levels come back if the files return byte-identical
-- Every action is logged to the **Sonara Review** output channel
+- Every action is logged to the **Sonara Review** output channel, failures with their stack trace
 - Stored under `.vscode/sonara/review/`
 
 ### Voice
@@ -47,6 +49,7 @@ Dictate notes, prompts, and task descriptions with a local Whisper model. Audio 
 - Project vocabulary biases Whisper toward your technical terms and proper names
 - Voice Log keeps the full dictation history as JSONL - search, copy, and clear it from the panel
 - No network connection required for recording or transcription
+- Every command is logged to the **Sonara Voice** output channel, with the error and its stack trace when something fails
 
 ### Voice Transcripts
 
@@ -65,6 +68,7 @@ Track time per task, stored as plain daily files.
 - Time accrues to the active task in small slots while the timer runs
 - Per-day, per-user data stored as JSON under `.vscode/sonara/time-tracker/days/`
 - Open today's file with `Sonara: Open Today's Time Tracker File`
+- Every command is logged to the **Sonara Time Tracker** output channel, with the error and its stack trace when something fails
 
 ## Requirements
 

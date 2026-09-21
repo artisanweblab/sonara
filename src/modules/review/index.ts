@@ -1,11 +1,13 @@
 import * as vscode from 'vscode';
 import { ActiveProject } from '../../shared/active-project';
 import { reviewDir } from '../../shared/project-layout';
+import { registerLoggedCommand } from '../../shared/output-log';
 import { withTimestamps } from '../../shared/timestamped-channel';
 import { ReviewCliLauncher } from './cli/launcher-installer';
 import { OutputReviewLogger } from './logging/output-review-logger';
 import { ReviewLogger } from './logging/review-logger';
 import { executeMoveChange, executeMoveChangeAtCursor, executeNavigateNewChange } from './commands/change-commands';
+import { executeCopyPaths, executeDelete, executeRevealInOS } from './commands/file-system-commands';
 import { MoveDirection, executeMoveLevel } from './commands/move-level-command';
 import { executeCheckStorage } from './commands/check-storage-command';
 import { executeShowSummary } from './commands/show-summary-command';
@@ -71,15 +73,7 @@ async function setViewMode(mode: 'tree' | 'list'): Promise<void> {
 }
 
 function loggedCommand(logger: ReviewLogger, command: string, handler: (...args: unknown[]) => unknown): vscode.Disposable {
-    return vscode.commands.registerCommand(command, async (...args: unknown[]) => {
-        logger.info(`Command ${command} ${describeArguments(args)}`);
-        try {
-            await handler(...args);
-        } catch (error) {
-            logger.error(`Command ${command} failed`, error);
-            await vscode.window.showErrorMessage(`Sonara Review: ${command} failed: ${error instanceof Error ? error.message : String(error)}`);
-        }
-    });
+    return registerLoggedCommand(logger, 'Sonara Review', command, handler, describeArguments);
 }
 
 export function registerReviewModule(context: vscode.ExtensionContext, activeProject: ActiveProject): void {
@@ -175,6 +169,13 @@ export function registerReviewModule(context: vscode.ExtensionContext, activePro
             loggedCommand(logger, command, () => executeMoveChangeAtCursor(holder, documents, direction))),
         loggedCommand(logger, 'sonara.review.nextNewChange', () => executeNavigateNewChange(holder, provider, opener, 1)),
         loggedCommand(logger, 'sonara.review.previousNewChange', () => executeNavigateNewChange(holder, provider, opener, -1)),
+        loggedCommand(logger, 'sonara.review.copyPath', (node: unknown, selection: unknown) =>
+            executeCopyPaths(holder, provider, 'absolute', node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
+        loggedCommand(logger, 'sonara.review.copyRelativePath', (node: unknown, selection: unknown) =>
+            executeCopyPaths(holder, provider, 'relative', node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
+        loggedCommand(logger, 'sonara.review.revealInOS', (node: unknown) => executeRevealInOS(holder, provider, node as ReviewNode | undefined)),
+        loggedCommand(logger, 'sonara.review.delete', (node: unknown, selection: unknown) =>
+            executeDelete(holder, provider, node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
         loggedCommand(logger, 'sonara.review.viewAsTree', () => setViewMode('tree')),
         loggedCommand(logger, 'sonara.review.viewAsList', () => setViewMode('list')),
         loggedCommand(logger, 'sonara.review.expandFolder', (node: unknown) => provider.setSubtreeExpanded(node as ReviewNode, true)),

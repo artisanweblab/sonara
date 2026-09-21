@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { currentTimestamp } from '../../../shared/timestamped-channel';
-import { ReviewLogger, describeError } from './review-logger';
+import { describeError } from '../../../shared/error-description';
+import { ReviewLogger } from './review-logger';
 
 const FLUSH_DELAY_MS = 100;
 const FLUSH_LINES = 2000;

@@ -197,7 +197,7 @@ export class FrontierMover {
         results.forEach((result, position) => {
             const command = tasked[position];
             if (result.kind === 'error') {
-                this.logger.info(`Move of ${command.file.path} failed: ${result.message}`);
+                this.logger.info(`ERROR Move of ${command.file.path} failed: ${result.detail}`);
                 outcomes.set(command, { kind: 'failed', message: result.message });
             } else if (result.kind === 'plan' && result.plan.kind === 'outcome') {
                 outcomes.set(command, result.plan.outcome);

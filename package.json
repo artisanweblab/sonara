@@ -353,6 +353,26 @@
         "command": "sonara.timeTracker.statusBarAction",
         "title": "Time Tracker Status Bar Action",
         "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.revealInOS",
+        "title": "Open Containing Folder",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.copyPath",
+        "title": "Copy Path",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.copyRelativePath",
+        "title": "Copy Relative Path",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.delete",
+        "title": "Delete",
+        "category": "Sonara"
       }
     ],
     "menus": {
@@ -550,9 +570,45 @@
           "command": "sonara.review.moveAllToNew",
           "when": "view == sonara.review && viewItem =~ /^reviewLevel\\.(queued|read|verified|staged)$/",
           "group": "2_moveTo@5"
+        },
+        {
+          "command": "sonara.review.revealInOS",
+          "when": "view == sonara.review && viewItem =~ /^review(File|Folder)\\./",
+          "group": "3_reveal@1"
+        },
+        {
+          "command": "sonara.review.copyPath",
+          "when": "view == sonara.review && viewItem =~ /^review(File|Folder)\\./",
+          "group": "4_copyPath@1"
+        },
+        {
+          "command": "sonara.review.copyRelativePath",
+          "when": "view == sonara.review && viewItem =~ /^review(File|Folder)\\./",
+          "group": "4_copyPath@2"
+        },
+        {
+          "command": "sonara.review.delete",
+          "when": "view == sonara.review && viewItem =~ /^review(File|Folder)\\./",
+          "group": "5_modification@1"
         }
       ],
       "commandPalette": [
+        {
+          "command": "sonara.review.revealInOS",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.copyPath",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.copyRelativePath",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.delete",
+          "when": "false"
+        },
         {
           "command": "sonara.review.openLevelDiff",
           "when": "false"

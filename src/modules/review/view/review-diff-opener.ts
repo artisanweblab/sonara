@@ -24,10 +24,10 @@ export class ReviewDiffOpener {
         const single = await this.documents.sideToShow(repoPath, level);
         if (single) {
             const uri = single === 'after' ? after : before;
-            await vscode.commands.executeCommand('vscode.open', uri, { selection: selectionAt(line), preview: true });
+            await vscode.commands.executeCommand('vscode.open', uri, { selection: selectionAt(line), preview: true, preserveFocus: true });
             return;
         }
-        await vscode.commands.executeCommand('vscode.diff', before, after, title, { selection: selectionAt(line), preview: true });
+        await vscode.commands.executeCommand('vscode.diff', before, after, title, { selection: selectionAt(line), preview: true, preserveFocus: true });
         void this.codeLensPrompt.showIfNeeded();
     }
 

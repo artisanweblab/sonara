@@ -1,4 +1,5 @@
 import * as path from 'path';
+import { registerVoiceCommand } from './voice-command';
 import * as vscode from 'vscode';
 
 import { CommandDeps } from './types';
@@ -21,7 +22,7 @@ const MEDIA_FILTERS = {
 };
 
 export function registerTranscribeFileCommand(deps: CommandDeps): vscode.Disposable {
-    return vscode.commands.registerCommand('sonara.voice.transcribeFile', async () => {
+    return registerVoiceCommand(deps, 'sonara.voice.transcribeFile', async () => {
         const { server, apiClient, activeProject, extensionLog, getTranscriptStore } = deps;
 
         if (!(await server.ensureRunning())) {
