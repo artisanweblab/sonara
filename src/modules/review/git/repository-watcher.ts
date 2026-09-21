@@ -8,6 +8,7 @@ import { OPERATION_MARKERS } from './git-repository-state';
 const DEBOUNCE_MS = 500;
 const STASH_REFERENCES = ['refs/stash', 'logs/refs/stash'];
 const COMMIT_REFERENCES = ['refs/heads/**', 'packed-refs'];
+const IGNORE_FILE = '.gitignore';
 
 export interface RepositoryChange {
     isFull: boolean;
@@ -144,6 +145,12 @@ export class RepositoryWatcher implements vscode.Disposable {
         }
         const relative = path.relative(this.folder.uri.fsPath, fsPath);
         if (relative.split(path.sep).includes('.git')) {
+            return;
+        }
+        if (path.basename(fsPath) === IGNORE_FILE) {
+            this.logger.info(`Watcher: ${relative} changed, full rescan queued`);
+            this.isFullPending = true;
+            this.schedule();
             return;
         }
         this.pendingPaths.add(fsPath);
