@@ -100,11 +100,15 @@ export function registerReviewModule(context: vscode.ExtensionContext, activePro
         treeView.onDidExpandElement(event => provider.rememberExpanded(event.element, true)),
         treeView.onDidCollapseElement(event => provider.rememberExpanded(event.element, false)),
     );
-    const updateMessage = (): void => {
+    const updateView = (): void => {
         const service = holder.get();
         treeView.message = service && !service.isActive() && service.getIdleReason() ? inactiveMessage(service) : undefined;
+        const newFiles = new Set((service?.getAtomsByLevel().get('new') ?? []).map(state => state.atom.path)).size;
+        treeView.badge = newFiles > 0
+            ? { value: newFiles, tooltip: `${newFiles} ${newFiles === 1 ? 'file has' : 'files have'} changes on New` }
+            : undefined;
     };
-    context.subscriptions.push(holder.onDidChange(updateMessage));
+    context.subscriptions.push(holder.onDidChange(updateView));
     const documents = new LevelDocumentProvider(holder);
     const binaryPreview = new BinaryLevelPreview(vscode.Uri.joinPath(context.globalStorageUri, 'review-binary-preview'));
     void binaryPreview.clear();

@@ -27,6 +27,7 @@ Manage project tasks as plain markdown files - they travel with your repository.
 Review uncommitted changes in steps instead of two buckets (changed / staged). Built for code written by AI agents: mark what you have already read, and anything the agent changes afterwards comes back as new.
 
 - Five levels, from top to bottom: **Staged Changes**, **Verified**, **Read**, **Queued**, **New**. Staged Changes is the real git stage; the other levels are kept by the extension
+- The Review view carries a badge with the number of files that have changes on New, so a glance at the sidebar is enough to see there is something to look at
 - The panel lists exactly the files git reports as changed, grouped by level, as a folder tree or a flat list (`sonara.review.viewMode` and `sonara.review.compactFolders`). Each level shows `files: N · changes: M`
 - Move a folder, a file, or a whole level with **Move Up**, **Move Down**, or straight to a level with **Move to Read**, **Move to Verified** and the rest, right in the context menu. Moving to Staged Changes stages the changes, moving down from it unstages them
 - Click a file to open the changes of that level only: the left side is `HEAD` plus all levels above, the right side adds this level. Both sides are read-only; **Open File** opens the real file for editing, and for a markdown file **Open Preview** renders the right side in a tab of the same column
