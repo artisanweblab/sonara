@@ -72,6 +72,10 @@ export class LevelDocumentProvider implements vscode.TextDocumentContentProvider
         return this.decoder.decode(content, vscode.Uri.file(service.absolutePath(address.repoPath)));
     }
 
+    document(repoPath: string, level: ReviewLevel): Promise<LevelDocument | null> {
+        return this.request(repoPath, level);
+    }
+
     async firstChangeLine(repoPath: string, level: ReviewLevel): Promise<number> {
         const document = await this.request(repoPath, level);
         return document?.changes[0]?.line ?? 0;

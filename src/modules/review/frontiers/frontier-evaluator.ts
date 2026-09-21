@@ -1,10 +1,21 @@
-import { MISSING_MODE } from '../model/file-state';
+import { MISSING_MODE, contentHash } from '../model/file-state';
 import { levelHunks } from '../model/layer-stack';
 import { diffSegments, firstLineIndex, joinSegments, mapNewIndexToOld } from '../model/line-diff';
 import { FrontierRecord, LevelChange, LevelDocument, ReviewLevel, ScannedFile, reviewLevelRank } from '../types';
-import { layerHash } from './file-stack';
+import { FileStack, layerHash } from './file-stack';
 import { FileStackBuilder } from './file-stack-builder';
 import { FileEvaluation, fileChangeId, gitAtoms, levelChanges, scanGeneration, stackAtoms } from './level-changes';
+
+function opaqueBytes(stack: FileStack, rank: number): Buffer | undefined {
+    const hash = layerHash(stack.content[rank]);
+    const { head, index, worktree } = stack.snapshot;
+    for (const side of [worktree, index, head]) {
+        if (side.content && contentHash(side.content) === hash) {
+            return side.content;
+        }
+    }
+    return undefined;
+}
 
 function describeOpaque(hash: string, mode: string): string {
     return mode === MISSING_MODE ? 'File is absent.\n' : `Binary content ${hash}\nMode ${mode}\n`;
@@ -46,6 +57,8 @@ export class FrontierEvaluator {
             return {
                 before: describeOpaque(layerHash(stack.content[rank + 1]), stack.modes[rank + 1]),
                 after: describeOpaque(layerHash(stack.content[rank]), stack.modes[rank]),
+                binaryBefore: opaqueBytes(stack, rank + 1),
+                binaryAfter: opaqueBytes(stack, rank),
                 isBeforeMissing: stack.modes[rank + 1] === MISSING_MODE,
                 isAfterMissing: stack.modes[rank] === MISSING_MODE,
                 changes,

@@ -1,7 +1,9 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ReviewService } from '../review-service';
+import { ReviewServiceHolder } from '../review-service-holder';
 import { LEVEL_LABELS, ReviewLevel } from '../types';
+import { BinaryLevelPreview } from './binary-level-preview';
 import { DiffCodeLensPrompt } from './diff-code-lens-prompt';
 import { LevelDocumentProvider } from './level-document-provider';
 
@@ -14,9 +16,18 @@ export class ReviewDiffOpener {
     constructor(
         private readonly documents: LevelDocumentProvider,
         private readonly codeLensPrompt: DiffCodeLensPrompt,
+        private readonly holder: ReviewServiceHolder,
+        private readonly binaryPreview: BinaryLevelPreview,
     ) {}
 
     async openLevelDiff(repoPath: string, level: ReviewLevel, revealLine?: number): Promise<void> {
+        if (this.holder.get()?.getFile(repoPath)?.scanned.kind === 'opaque') {
+            const document = await this.documents.document(repoPath, level);
+            if (document) {
+                await this.binaryPreview.open(repoPath, level, document);
+                return;
+            }
+        }
         const before = LevelDocumentProvider.uriFor({ repoPath, level, side: 'before' });
         const after = LevelDocumentProvider.uriFor({ repoPath, level, side: 'after' });
         const title = `${path.posix.basename(repoPath)} (${LEVEL_LABELS[level]})`;
@@ -24,7 +35,8 @@ export class ReviewDiffOpener {
         const single = await this.documents.sideToShow(repoPath, level);
         if (single) {
             const uri = single === 'after' ? after : before;
-            await vscode.commands.executeCommand('vscode.open', uri, { selection: selectionAt(line), preview: true, preserveFocus: true });
+            const document = await vscode.workspace.openTextDocument(uri);
+            await vscode.window.showTextDocument(document, { selection: selectionAt(line), preview: true, preserveFocus: true });
             return;
         }
         await vscode.commands.executeCommand('vscode.diff', before, after, title, { selection: selectionAt(line), preview: true, preserveFocus: true });
