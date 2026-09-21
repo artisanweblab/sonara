@@ -105,9 +105,13 @@ export interface LevelChange {
     label: string | null;
 }
 
+export type LevelDocumentSideName = 'before' | 'after';
+
 export interface LevelDocument {
     before: string;
     after: string;
+    binaryBefore?: Buffer;
+    binaryAfter?: Buffer;
     isBeforeMissing: boolean;
     isAfterMissing: boolean;
     changes: LevelChange[];
