@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { registerVoiceCommand } from './commands/voice-command';
 
 import { ServerManager } from './server/server-manager';
 import { SetupWizard } from './server/setup-wizard';
@@ -183,8 +184,8 @@ export async function registerVoiceModule(
     registerVocabularyCommands(deps);
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('sonara.voice.log.refresh', () => voiceLogPanel.forceRefresh()),
-        vscode.commands.registerCommand('sonara.voice.transcripts.refresh', () => voiceTranscriptsPanel.forceRefresh()),
+        registerVoiceCommand(deps, 'sonara.voice.log.refresh', () => voiceLogPanel.forceRefresh()),
+        registerVoiceCommand(deps, 'sonara.voice.transcripts.refresh', () => voiceTranscriptsPanel.forceRefresh()),
         registerTranscribeFileCommand(deps),
     );
 

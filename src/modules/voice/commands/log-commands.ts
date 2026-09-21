@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { registerVoiceCommand } from './voice-command';
 
 import { CommandDeps } from './types';
 
@@ -10,18 +11,18 @@ export function registerLogCommands(deps: CommandDeps): void {
     }
 
     extensionContext.subscriptions.push(
-        vscode.commands.registerCommand('sonara.voice.showLog', () => {
+        registerVoiceCommand(deps, 'sonara.voice.showLog', () => {
             vscode.commands.executeCommand('sonara.voice.log.focus');
         }),
 
-        vscode.commands.registerCommand('sonara.voice.toggleShowAll.expand', () => {
+        registerVoiceCommand(deps, 'sonara.voice.toggleShowAll.expand', () => {
             voiceLogPanel.toggleShowAll();
         }),
-        vscode.commands.registerCommand('sonara.voice.toggleShowAll.collapse', () => {
+        registerVoiceCommand(deps, 'sonara.voice.toggleShowAll.collapse', () => {
             voiceLogPanel.toggleShowAll();
         }),
 
-        vscode.commands.registerCommand('sonara.voice.clearProjectLog', async () => {
+        registerVoiceCommand(deps, 'sonara.voice.clearProjectLog', async () => {
             const confirm = await vscode.window.showWarningMessage(
                 'Clear all voice log records for this project?',
                 { modal: true },

@@ -1,3 +1,4 @@
+import { describeError } from '../../../shared/error-description';
 import type { FileSnapshot } from '../git/content-loader';
 import type { IndexTarget } from '../git/index-target';
 import { buildFileStack } from '../frontiers/file-stack';
@@ -21,7 +22,7 @@ export type ComputeTask =
 export type ComputeResult =
     | { kind: 'plan'; plan: MovePlan }
     | { kind: 'evaluate'; evaluation: FileEvaluation }
-    | { kind: 'error'; message: string };
+    | { kind: 'error'; message: string; detail: string };
 
 function toBuffer(value: Uint8Array | null): Buffer | null {
     return value === null ? null : Buffer.isBuffer(value) ? value : Buffer.from(value.buffer, value.byteOffset, value.byteLength);
@@ -87,6 +88,6 @@ export function executeTask(task: ComputeTask): ComputeResult {
             ? { kind: 'plan', plan: planMove(task.input) }
             : { kind: 'evaluate', evaluation: evaluate(task.input) };
     } catch (error) {
-        return { kind: 'error', message: error instanceof Error ? error.message : String(error) };
+        return { kind: 'error', message: error instanceof Error ? error.message : String(error), detail: describeError(error) };
     }
 }

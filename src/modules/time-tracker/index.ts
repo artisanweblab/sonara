@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { ActiveProject } from '../../shared/active-project';
+import { ChannelOutputLog, registerLoggedCommand } from '../../shared/output-log';
+import { createTimestampedOutputChannel } from '../../shared/timestamped-channel';
 import { TaskStore } from '../tasks/store/task-store';
 import { TasksWebviewPanel } from '../tasks/webview/tasks-webview-panel';
 import { IdentityService } from './identity-service';
@@ -7,12 +9,19 @@ import { TimerService } from './timer-service';
 import { taskFileSlug } from './slug';
 import { TimeTrackerStatusBar } from './status-bar';
 
+const PRODUCT = 'Sonara Time Tracker';
+
 export async function registerTimeTrackerModule(
     context: vscode.ExtensionContext,
     activeProject: ActiveProject,
     taskStore: TaskStore,
     tasksPanel: TasksWebviewPanel,
 ): Promise<TimerService> {
+    const channel = createTimestampedOutputChannel(PRODUCT);
+    context.subscriptions.push(channel);
+    const log = new ChannelOutputLog(channel);
+    const logged = (command: string, handler: () => unknown): vscode.Disposable => registerLoggedCommand(log, PRODUCT, command, handler);
+
     const config = vscode.workspace.getConfiguration('sonara.timeTracker');
     const tickIntervalSec = config.get<number>('tickIntervalSec', 15);
     const flushIntervalSec = config.get<number>('flushIntervalSec', 60);
@@ -49,7 +58,7 @@ export async function registerTimeTrackerModule(
     context.subscriptions.push(statusBar);
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('sonara.timeTracker.start', async () => {
+        logged('sonara.timeTracker.start', async () => {
             const entries = taskStore.getEntries();
             const items: vscode.QuickPickItem[] = [];
             for (const entry of entries) {
@@ -73,10 +82,10 @@ export async function registerTimeTrackerModule(
             if (!picked || !picked.description) return;
             await timer.start(picked.description);
         }),
-        vscode.commands.registerCommand('sonara.timeTracker.stop', async () => {
+        logged('sonara.timeTracker.stop', async () => {
             await timer.stop();
         }),
-        vscode.commands.registerCommand('sonara.timeTracker.toggle', async () => {
+        logged('sonara.timeTracker.toggle', async () => {
             const active = timer.getActiveSlug();
             if (active) {
                 await timer.stop();
@@ -84,7 +93,7 @@ export async function registerTimeTrackerModule(
             }
             await vscode.commands.executeCommand('sonara.timeTracker.start');
         }),
-        vscode.commands.registerCommand('sonara.timeTracker.statusBarAction', async () => {
+        logged('sonara.timeTracker.statusBarAction', async () => {
             const slug = timer.getActiveSlug();
             if (!slug) return;
             type ActionId = 'open' | 'stop' | 'switch';
@@ -115,7 +124,7 @@ export async function registerTimeTrackerModule(
             const doc = await vscode.workspace.openTextDocument(uri);
             await vscode.window.showTextDocument(doc);
         }),
-        vscode.commands.registerCommand('sonara.timeTracker.openTodayFile', async () => {
+        logged('sonara.timeTracker.openTodayFile', async () => {
             const filePath = await timer.todayFilePath();
             if (!filePath) {
                 await vscode.window.showInformationMessage('No time-tracker user is configured yet.');

@@ -142,6 +142,12 @@ export function toHunk(a: readonly string[], b: readonly string[], range: RangeH
     };
 }
 
+export function appendRange(target: string[], source: readonly string[], start: number, end: number): void {
+    for (let index = Math.max(start, 0); index < Math.min(end, source.length); index++) {
+        target.push(source[index]);
+    }
+}
+
 export function spliceSegments(base: readonly string[], source: readonly string[], hunks: readonly RangeHunk[]): string[] {
     const ordered = [...hunks].sort((x, y) => firstLineIndex(x.oldStart, x.oldLines) - firstLineIndex(y.oldStart, y.oldLines));
     const segments: string[] = [];
@@ -149,11 +155,11 @@ export function spliceSegments(base: readonly string[], source: readonly string[
     for (const hunk of ordered) {
         const oldIndex = firstLineIndex(hunk.oldStart, hunk.oldLines);
         const newIndex = firstLineIndex(hunk.newStart, hunk.newLines);
-        segments.push(...base.slice(cursor, oldIndex));
-        segments.push(...source.slice(newIndex, newIndex + hunk.newLines));
+        appendRange(segments, base, cursor, oldIndex);
+        appendRange(segments, source, newIndex, newIndex + hunk.newLines);
         cursor = Math.max(cursor, oldIndex + hunk.oldLines);
     }
-    segments.push(...base.slice(cursor));
+    appendRange(segments, base, cursor, base.length);
     return segments;
 }
 

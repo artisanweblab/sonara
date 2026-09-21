@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { registerVoiceCommand } from './voice-command';
 import * as crypto from 'crypto';
 
 import { CommandDeps } from './types';
@@ -799,7 +800,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
     }
 
     extensionContext.subscriptions.push(
-        vscode.commands.registerCommand('sonara.voice.toggleStreamingMode', async () => {
+        registerVoiceCommand(deps, 'sonara.voice.toggleStreamingMode', async () => {
             const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
             const current = getStreamingMode();
 
@@ -827,7 +828,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             vscode.window.showInformationMessage(`Streaming mode: ${newLabel}`);
         }),
 
-        vscode.commands.registerCommand('sonara.voice.toggleRecording', async () => {
+        registerVoiceCommand(deps, 'sonara.voice.toggleRecording', async () => {
             if (recorder.state === 'recording') {
                 await vscode.commands.executeCommand('sonara.voice.stopRecording');
                 return;
@@ -847,7 +848,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             }
         }),
 
-        vscode.commands.registerCommand('sonara.voice.cancelRecording', async () => {
+        registerVoiceCommand(deps, 'sonara.voice.cancelRecording', async () => {
             await vscode.commands.executeCommand('setContext', 'sonara.voice.isRecording', false);
             if (recorder.state !== 'starting' && recorder.state !== 'recording' && recorder.state !== 'finishing') {
                 return;
@@ -859,7 +860,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             }
         }),
 
-        vscode.commands.registerCommand('sonara.voice.startRecording', async () => {
+        registerVoiceCommand(deps, 'sonara.voice.startRecording', async () => {
             if (!(await server.ensureRunning())) {
                 return;
             }
@@ -906,7 +907,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
             }
         }),
 
-        vscode.commands.registerCommand('sonara.voice.stopRecording', async () => {
+        registerVoiceCommand(deps, 'sonara.voice.stopRecording', async () => {
             await vscode.commands.executeCommand('setContext', 'sonara.voice.isRecording', false);
             if (recorder.state !== 'recording') {
                 return;

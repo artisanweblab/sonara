@@ -1,5 +1,5 @@
 import { RangeHunk } from '../types';
-import { diffSegments, firstLineIndex } from './line-diff';
+import { appendRange, diffSegments, firstLineIndex } from './line-diff';
 
 type Side = 'ours' | 'theirs';
 
@@ -45,11 +45,11 @@ function regionVersion(base: readonly string[], side: readonly string[], hunks: 
     for (const hunk of hunks) {
         const oldIndex = firstLineIndex(hunk.oldStart, hunk.oldLines);
         const newIndex = firstLineIndex(hunk.newStart, hunk.newLines);
-        result.push(...base.slice(position, oldIndex));
-        result.push(...side.slice(newIndex, newIndex + hunk.newLines));
+        appendRange(result, base, position, oldIndex);
+        appendRange(result, side, newIndex, newIndex + hunk.newLines);
         position = oldIndex + hunk.oldLines;
     }
-    result.push(...base.slice(position, end));
+    appendRange(result, base, position, end);
     return result;
 }
 
@@ -58,13 +58,13 @@ export function mergeKeepingOurs(base: readonly string[], ours: readonly string[
     const segments: string[] = [];
     let cursor = 0;
     for (const cluster of clusters) {
-        segments.push(...base.slice(cursor, cluster.start));
+        appendRange(segments, base, cursor, cluster.start);
         const region = cluster.ours.length === 0
             ? regionVersion(base, theirs, cluster.theirs, cluster.start, cluster.end)
             : regionVersion(base, ours, cluster.ours, cluster.start, cluster.end);
-        segments.push(...region);
+        appendRange(segments, region, 0, region.length);
         cursor = cluster.end;
     }
-    segments.push(...base.slice(cursor));
+    appendRange(segments, base, cursor, base.length);
     return segments;
 }

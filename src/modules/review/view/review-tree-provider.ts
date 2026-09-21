@@ -191,7 +191,7 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
         void vscode.commands.executeCommand('setContext', 'sonara.review.viewMode', this.currentLayout());
     }
 
-    private absoluteDisplayPath(displayPath: string): string {
+    absoluteDisplayPath(displayPath: string): string {
         const service = this.holder.get();
         if (!service) {
             return displayPath;

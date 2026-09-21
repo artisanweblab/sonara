@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { OutputLog } from '../../../shared/output-log';
 import { TaskStore } from '../store/task-store';
 import {
     NO_STATUS_SECTION_ID,
@@ -119,6 +120,7 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
         private readonly store: TaskStore,
         private readonly extensionUri: vscode.Uri,
         private readonly memento: vscode.Memento,
+        private readonly log: OutputLog,
     ) {
         this.disposables.push(this.store.onDidChange(() => {
             void this.refreshTotalsAndPush();
@@ -142,8 +144,8 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
         if (this.timer) {
             try {
                 this.totalsBySlug = await this.timer.totalsBySlug();
-            } catch {
-                // ignore - totals stay as last known
+            } catch (error) {
+                this.log.error('Reading time totals failed, the panel keeps the last known totals', error);
             }
         }
         this.pushState();
@@ -157,7 +159,7 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
         };
         view.webview.html = buildPanelHtml();
         view.webview.onDidReceiveMessage((msg: IncomingMessage) => {
-            void this.handleMessage(msg);
+            void this.runMessage(msg);
         });
         view.onDidChangeVisibility(() => {
             if (view.visible) {
@@ -165,6 +167,24 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
             }
         });
         this.pushState();
+    }
+
+    private async runMessage(msg: IncomingMessage): Promise<void> {
+        this.log.info(`Panel action ${JSON.stringify(msg)}`);
+        try {
+            await this.handleMessage(msg);
+        } catch (error) {
+            this.log.error(`Panel action ${msg.type} failed`, error);
+            await vscode.window.showErrorMessage(`Sonara Tasks: ${msg.type} failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    private taskUri(id: string): vscode.Uri | undefined {
+        const uri = this.store.getUriByPath(id);
+        if (!uri) {
+            this.log.info(`Task ${id} is not in the task list any more, the action did nothing`);
+        }
+        return uri;
     }
 
     private async handleMessage(msg: IncomingMessage): Promise<void> {
@@ -178,14 +198,14 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
                 await executeNewTask(this.store, msg.status ?? 'inbox');
                 return;
             case 'openPreview': {
-                const uri = this.store.getUriByPath(msg.id);
+                const uri = this.taskUri(msg.id);
                 if (uri) {
                     await this.openMarkdownPreviewReusing(uri);
                 }
                 return;
             }
             case 'openEditor': {
-                const uri = this.store.getUriByPath(msg.id);
+                const uri = this.taskUri(msg.id);
                 if (uri) {
                     const column = this.resolveSecondaryColumn();
                     const document = await vscode.workspace.openTextDocument(uri);
@@ -198,14 +218,16 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
             }
             case 'copyText': {
                 const task = this.store.getTaskByPath(msg.id);
-                if (task) {
-                    await vscode.env.clipboard.writeText(task.body);
-                    this.postCopied(msg.id, 'text');
+                if (!task) {
+                    this.log.info(`Task ${msg.id} is not in the task list any more, the action did nothing`);
+                    return;
                 }
+                await vscode.env.clipboard.writeText(task.body);
+                this.postCopied(msg.id, 'text');
                 return;
             }
             case 'copyPath': {
-                const uri = this.store.getUriByPath(msg.id);
+                const uri = this.taskUri(msg.id);
                 if (uri) {
                     await vscode.env.clipboard.writeText(uri.fsPath);
                     this.postCopied(msg.id, 'path');
@@ -213,7 +235,7 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
                 return;
             }
             case 'revealInOS': {
-                const uri = this.store.getUriByPath(msg.id);
+                const uri = this.taskUri(msg.id);
                 if (uri) {
                     await vscode.commands.executeCommand('revealFileInOS', uri);
                 }
@@ -295,7 +317,8 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
             try {
                 const bytes = await vscode.workspace.fs.readFile(uri);
                 return { ...t, rawContent: new TextDecoder('utf-8').decode(bytes) };
-            } catch {
+            } catch (error) {
+                this.log.error(`Reading ${uri.fsPath} for the Markdown copy failed, its parsed text is used instead`, error);
                 return t;
             }
         });

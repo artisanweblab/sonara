@@ -1,4 +1,5 @@
-import { ReviewLogger, describeError } from '../logging/review-logger';
+import { describeError } from '../../../shared/error-description';
+import { ReviewLogger } from '../logging/review-logger';
 
 export class CliReviewLogger implements ReviewLogger {
     constructor(private readonly isVerbose: boolean) {}

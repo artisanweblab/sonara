@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { registerVoiceCommand } from './voice-command';
 
 import { CommandDeps } from './types';
 import { vocabularyFile, ensureSonaraProject } from '../../../shared/project-layout';
@@ -8,7 +9,7 @@ export function registerVocabularyCommands(deps: CommandDeps): void {
     const { extensionContext, activeProject } = deps;
 
     extensionContext.subscriptions.push(
-        vscode.commands.registerCommand('sonara.voice.editVocabulary', async () => {
+        registerVoiceCommand(deps, 'sonara.voice.editVocabulary', async () => {
             const folder = activeProject.get();
             if (!folder) {
                 vscode.window.showInformationMessage('Open a folder to use voice features.');

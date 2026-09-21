@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { registerVoiceCommand } from './voice-command';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
@@ -52,7 +53,7 @@ export function registerModelCommands(deps: CommandDeps): void {
     const modelsDir = serverModelsDir(extensionContext.globalStorageUri.fsPath);
 
     extensionContext.subscriptions.push(
-        vscode.commands.registerCommand('sonara.voice.changeModel', async () => {
+        registerVoiceCommand(deps, 'sonara.voice.changeModel', async () => {
             const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
             const currentModel = config.get<string>('model', VOICE_DEFAULTS.model);
 
@@ -102,7 +103,7 @@ export function registerModelCommands(deps: CommandDeps): void {
             }
         }),
 
-        vscode.commands.registerCommand('sonara.voice.changeLanguage', async () => {
+        registerVoiceCommand(deps, 'sonara.voice.changeLanguage', async () => {
             const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
             const currentLanguage = config.get<string>('language', VOICE_DEFAULTS.language);
 
@@ -116,7 +117,7 @@ export function registerModelCommands(deps: CommandDeps): void {
             await config.update('language', picked.value, vscode.ConfigurationTarget.Global);
         }),
 
-        vscode.commands.registerCommand('sonara.voice.changeDevice', async () => {
+        registerVoiceCommand(deps, 'sonara.voice.changeDevice', async () => {
             const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
             const currentDevice = config.get<string>('device', VOICE_DEFAULTS.device);
             const setupMode = extensionContext.globalState.get<SetupMode>(
@@ -186,7 +187,7 @@ export function registerModelCommands(deps: CommandDeps): void {
             }
         }),
 
-        vscode.commands.registerCommand('sonara.voice.downloadModel', async () => {
+        registerVoiceCommand(deps, 'sonara.voice.downloadModel', async () => {
             const items: vscode.QuickPickItem[] = WHISPER_MODELS.map(model => {
                 const downloaded = isModelDownloaded(modelsDir, model);
                 const marks = [MODEL_DESCRIPTIONS[model].size];

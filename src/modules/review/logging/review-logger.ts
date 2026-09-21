@@ -4,13 +4,6 @@ export interface ReviewLogger {
     error(message: string, error: unknown): void;
 }
 
-export function describeError(error: unknown): string {
-    if (error instanceof Error) {
-        return error.stack ?? `${error.name}: ${error.message}`;
-    }
-    return String(error);
-}
-
 export function summarizeGitArgs(args: readonly string[]): string {
     const separator = args.indexOf('--');
     if (separator < 0) {

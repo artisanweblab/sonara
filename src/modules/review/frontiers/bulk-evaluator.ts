@@ -55,8 +55,12 @@ export class BulkEvaluator {
             const path = tasked[position].file.path;
             if (result.kind === 'evaluate') {
                 outcomes.set(path, result.evaluation);
+            } else if (result.kind === 'error') {
+                const error = new Error(result.message);
+                error.stack = result.detail;
+                outcomes.set(path, { error });
             } else {
-                outcomes.set(path, { error: new Error(result.kind === 'error' ? result.message : 'unexpected compute result') });
+                outcomes.set(path, { error: new Error('unexpected compute result') });
             }
         });
     }
