@@ -10,6 +10,8 @@ import { executeMoveChange, executeMoveChangeAtCursor, executeNavigateNewChange 
 import { executeCopyPaths, executeDelete, executeRevealInOS } from './commands/file-system-commands';
 import { MoveDirection, executeMoveLevel } from './commands/move-level-command';
 import { executeCheckStorage } from './commands/check-storage-command';
+import { executeOpenPreview } from './commands/preview-command';
+import { executeShowActions } from './commands/actions-menu-command';
 import { executeShowSummary } from './commands/show-summary-command';
 import { ReviewService, inactiveMessage } from './review-service';
 import { ReviewServiceHolder } from './review-service-holder';
@@ -163,6 +165,8 @@ export function registerReviewModule(context: vscode.ExtensionContext, activePro
         }),
         loggedCommand(logger, 'sonara.review.openFile', (uri: unknown) =>
             withService(service => opener.openWorkingFile(service, uri instanceof vscode.Uri ? uri : undefined))),
+        loggedCommand(logger, 'sonara.review.openPreview', (uri: unknown) =>
+            executeOpenPreview(uri instanceof vscode.Uri ? uri : undefined)),
         loggedCommand(logger, MOVE_CHANGE_COMMAND, (reference: unknown, direction: unknown) =>
             executeMoveChange(holder, documents, reference as LevelChangeReference | undefined, direction as ChangeMoveDirection)),
         ...CHANGE_AT_CURSOR_COMMANDS.map(([command, direction]) =>
@@ -176,6 +180,8 @@ export function registerReviewModule(context: vscode.ExtensionContext, activePro
         loggedCommand(logger, 'sonara.review.revealInOS', (node: unknown) => executeRevealInOS(holder, provider, node as ReviewNode | undefined)),
         loggedCommand(logger, 'sonara.review.delete', (node: unknown, selection: unknown) =>
             executeDelete(holder, provider, node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
+        loggedCommand(logger, 'sonara.review.showActions', (node: unknown, selection: unknown) =>
+            executeShowActions(node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
         loggedCommand(logger, 'sonara.review.viewAsTree', () => setViewMode('tree')),
         loggedCommand(logger, 'sonara.review.viewAsList', () => setViewMode('list')),
         loggedCommand(logger, 'sonara.review.expandFolder', (node: unknown) => provider.setSubtreeExpanded(node as ReviewNode, true)),

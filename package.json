@@ -73,6 +73,12 @@
         "icon": "$(go-to-file)"
       },
       {
+        "command": "sonara.review.openPreview",
+        "title": "Open Preview",
+        "category": "Sonara",
+        "icon": "$(open-preview)"
+      },
+      {
         "command": "sonara.review.moveChange",
         "title": "Move Change",
         "category": "Sonara"
@@ -373,6 +379,12 @@
         "command": "sonara.review.delete",
         "title": "Delete",
         "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.showActions",
+        "title": "Show Actions",
+        "category": "Sonara",
+        "icon": "$(ellipsis)"
       }
     ],
     "menus": {
@@ -468,6 +480,11 @@
           "command": "sonara.review.openFile",
           "when": "resourceScheme == sonara-review",
           "group": "navigation@1"
+        },
+        {
+          "command": "sonara.review.openPreview",
+          "when": "resourceScheme == sonara-review && resourceLangId == markdown",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -590,6 +607,11 @@
           "command": "sonara.review.delete",
           "when": "view == sonara.review && viewItem =~ /^review(File|Folder)\\./",
           "group": "5_modification@1"
+        },
+        {
+          "command": "sonara.review.showActions",
+          "when": "view == sonara.review && viewItem =~ /^review(Level|Folder|File)\\./",
+          "group": "inline@9"
         }
       ],
       "commandPalette": [
@@ -607,6 +629,10 @@
         },
         {
           "command": "sonara.review.delete",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.showActions",
           "when": "false"
         },
         {
