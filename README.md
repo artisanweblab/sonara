@@ -13,7 +13,7 @@ Sonara adds a sidebar with four panels - **Tasks**, **Review**, **Voice Log**, a
 Manage project tasks as plain markdown files - they travel with your repository.
 
 - One markdown file per task with YAML frontmatter metadata
-- Fields: title, status, priority, sprint, labels, created, updated
+- Fields: title, status, priority, sprint, labels, created
 - Webview panel groups tasks by status: Activity, Inbox, Backlog, To Do, In Progress, Ready for Review, Done, Released, Cancelled
 - Five priority levels: Highest, High, Medium, Low, Lowest
 - Filter by sprint, label, and priority directly in the panel
@@ -124,9 +124,10 @@ title: Implement OAuth2 session refresh
 status: in-progress
 priority: high
 sprint: Q2 Growth
-labels: [backend, auth]
-created: 2026-04-08T09:00:00Z
-updated: 2026-04-10T16:45:00Z
+labels:
+  - backend
+  - auth
+created: 2026-04-08T09:00:00.000Z
 ---
 
 <!-- Sonara task. Format and rules: .vscode/sonara/tasks/README.md -->
@@ -142,7 +143,6 @@ Task description in free-form markdown.
 | `status` | No (null if omitted or invalid) | `activity`, `inbox`, `backlog`, `todo`, `in-progress`, `review`, `done`, `released`, `cancelled` |
 | `priority` | No (defaults to `medium`) | `highest`, `high`, `medium`, `low`, `lowest` |
 | `created` | No | ISO 8601 date string |
-| `updated` | No | ISO 8601 date string |
 | `sprint` | No | Any string |
 | `labels` | No | YAML array of strings |
 

@@ -32,10 +32,7 @@ export async function executeEditLabels(store: TaskStore, fsPath: string): Promi
     if (sameSet(task.labels, next)) {
         return;
     }
-    await updateFrontmatter(task.fileUri, {
-        labels: next.length === 0 ? null : next,
-        updated: new Date(),
-    });
+    await updateFrontmatter(task.fileUri, { labels: next.length === 0 ? null : next });
 }
 
 function sameSet(a: string[], b: string[]): boolean {

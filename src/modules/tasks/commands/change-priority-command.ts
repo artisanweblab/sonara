@@ -24,5 +24,5 @@ export async function executeChangePriority(store: TaskStore, fsPath: string): P
     if (!picked || task.priority === picked.id) {
         return;
     }
-    await updateFrontmatter(task.fileUri, { priority: picked.id, updated: new Date() });
+    await updateFrontmatter(task.fileUri, { priority: picked.id });
 }

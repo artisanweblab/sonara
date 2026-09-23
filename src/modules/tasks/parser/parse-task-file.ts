@@ -80,7 +80,6 @@ export async function parseTaskFile(fileUri: vscode.Uri): Promise<TaskEntry> {
         sprint,
         labels,
         created: stringifyDate(data.created),
-        updated: stringifyDate(data.updated),
         summary,
         body,
     };

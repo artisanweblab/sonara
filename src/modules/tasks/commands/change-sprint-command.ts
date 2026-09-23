@@ -43,5 +43,5 @@ export async function executeChangeSprint(store: TaskStore, fsPath: string): Pro
     if (task.sprint === next) {
         return;
     }
-    await updateFrontmatter(task.fileUri, { sprint: next, updated: new Date() });
+    await updateFrontmatter(task.fileUri, { sprint: next });
 }

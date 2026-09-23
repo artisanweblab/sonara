@@ -62,7 +62,6 @@ interface TaskDto {
     sprint: string | null;
     labels: string[];
     created: string | null;
-    updated: string | null;
     summary: string;
     body: string;
     timeTotalSec: number;
@@ -622,7 +621,6 @@ function taskToDto(task: Task, slug: string | null, timeTotalSec: number, isTime
         sprint: task.sprint,
         labels: task.labels,
         created: task.created,
-        updated: task.updated,
         summary: task.summary,
         body: task.body,
         timeTotalSec,
