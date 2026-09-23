@@ -11,6 +11,7 @@ import { encodePcmToWav } from '../audio/wav-encoder';
 import { VOICE_CONFIG_SECTION, VOICE_DEFAULTS, type WhisperModel } from '../constants';
 import { voiceLogDir, vocabularyFile, ensureDir } from '../../../shared/project-layout';
 import { recoverFromCudaOom } from './cuda-oom-recovery';
+import { pickOne } from '../../../shared/quick-input';
 
 type StreamingModeValue = 'off' | 'on' | 'adaptive';
 
@@ -812,7 +813,7 @@ export function registerRecordingCommands(deps: CommandDeps): TranscribingState 
                     value: option.value,
                 }));
 
-            const picked = await vscode.window.showQuickPick(items, {
+            const picked = await pickOne(items, {
                 title: 'Streaming Mode',
                 placeHolder: `Current: ${STREAMING_MODE_OPTIONS.find(o => o.value === current)?.label ?? current}`,
                 matchOnDescription: true,

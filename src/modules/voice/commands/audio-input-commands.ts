@@ -3,6 +3,7 @@ import { registerVoiceCommand } from './voice-command';
 
 import { CommandDeps } from './types';
 import { VOICE_CONFIG_SECTION } from '../constants';
+import { pickOne } from '../../../shared/quick-input';
 
 interface AudioInputQuickPickItem extends vscode.QuickPickItem {
     deviceId: string | null;
@@ -53,7 +54,7 @@ export function registerAudioInputCommands(deps: CommandDeps): void {
                 });
             }
 
-            const picked = await vscode.window.showQuickPick(items, {
+            const picked = await pickOne(items, {
                 placeHolder: 'Select audio input device for recording',
                 matchOnDetail: true,
             });

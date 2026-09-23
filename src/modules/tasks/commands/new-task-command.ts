@@ -5,6 +5,7 @@ import { atomicWrite, openInEditor } from '../../../shared/fs-utils';
 import { generateUniqueFilename } from '../file-system/path-utils';
 import { TASK_FILE_HEADER } from '../templates/task-file-header';
 import { TaskStatus } from '../types';
+import { askText } from '../../../shared/quick-input';
 
 export async function executeNewTask(store: TaskStore, initialStatus: TaskStatus = 'inbox'): Promise<void> {
     const tasksDir = store.getTasksDir();
@@ -13,7 +14,8 @@ export async function executeNewTask(store: TaskStore, initialStatus: TaskStatus
         return;
     }
 
-    const title = await vscode.window.showInputBox({
+    const title = await askText({
+        title: 'New Task',
         prompt: 'Task title',
         placeHolder: 'e.g. Add login screen',
         ignoreFocusOut: true,

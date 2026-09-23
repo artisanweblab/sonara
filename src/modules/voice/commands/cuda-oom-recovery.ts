@@ -8,6 +8,7 @@ import {
     WHISPER_MODELS,
     type WhisperModel,
 } from '../constants';
+import { pickOne } from '../../../shared/quick-input';
 
 export interface CudaOomRecoveryServer {
     runWithModelLoadingProgress<T>(title: string, operation: () => Promise<T>): Promise<T>;
@@ -63,7 +64,7 @@ async function pickRecoveryChoice(currentModel: WhisperModel): Promise<RecoveryC
         });
     }
 
-    const picked = await vscode.window.showQuickPick(items, {
+    const picked = await pickOne(items, {
         title: 'GPU out of memory',
         placeHolder: `Current model "${currentModel}" does not fit in GPU memory. Choose how to recover this recording:`,
         matchOnDescription: true,

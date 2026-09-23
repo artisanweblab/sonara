@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { TaskStore } from '../store/task-store';
 import { updateFrontmatter } from '../parser/update-frontmatter';
 import { STATUSES, STATUS_LABELS, TaskStatus } from '../types';
+import { pickOne } from '../../../shared/quick-input';
 
 export async function executeChangeStatus(store: TaskStore, fsPath: string): Promise<void> {
     const task = store.getTaskByPath(fsPath);
@@ -16,7 +17,7 @@ export async function executeChangeStatus(store: TaskStore, fsPath: string): Pro
         picked: task.status === s,
     }));
 
-    const picked = await vscode.window.showQuickPick(items, {
+    const picked = await pickOne(items, {
         title: `Status for "${task.title}"`,
         placeHolder: task.status ? `Current: ${STATUS_LABELS[task.status]}` : 'No status',
         ignoreFocusOut: true,

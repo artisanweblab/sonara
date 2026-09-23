@@ -18,6 +18,7 @@ import {
     type WhisperModel,
     type SetupMode,
 } from '../constants';
+import { pickOne } from '../../../shared/quick-input';
 
 type DeviceChoice = 'auto' | 'gpu' | 'cpu';
 type StreamingModeChoice = 'off' | 'on' | 'adaptive';
@@ -191,7 +192,7 @@ export class SetupWizard {
             detail: MODEL_DESCRIPTIONS[model].detail,
         }));
 
-        const picked = await vscode.window.showQuickPick(items, {
+        const picked = await pickOne(items, {
             placeHolder: 'Select Whisper model (can be changed later in settings)',
             title: 'Choose Model',
             matchOnDescription: true,
@@ -228,7 +229,7 @@ export class SetupWizard {
             },
         ];
 
-        const picked = await vscode.window.showQuickPick(items, {
+        const picked = await pickOne(items, {
             placeHolder: 'Select compute device for the Whisper model',
             title: 'Choose Device',
             matchOnDetail: true,
@@ -259,7 +260,7 @@ export class SetupWizard {
             },
         ];
 
-        const picked = await vscode.window.showQuickPick(items, {
+        const picked = await pickOne(items, {
             placeHolder: 'Choose streaming (live) transcription mode',
             title: 'Streaming Mode',
             matchOnDetail: true,

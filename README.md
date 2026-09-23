@@ -6,6 +6,8 @@ Tasks, voice dictation, time tracking, and step-by-step review of uncommitted ch
 
 Sonara adds a sidebar with four panels - **Tasks**, **Review**, **Voice Log**, and **Voice Transcripts** - plus a **Time Tracker** in the status bar. Each project (workspace folder) keeps its own data under `.vscode/sonara/`.
 
+Every list or input Sonara opens at the top of the window has a close button in its title bar, so it can be dismissed on a touch screen without an Escape key.
+
 ## Features
 
 ### Tasks

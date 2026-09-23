@@ -22,6 +22,7 @@ import { executeChangeStatus } from '../commands/change-status-command';
 import { executeChangePriority } from '../commands/change-priority-command';
 import { TimerService } from '../../time-tracker/timer-service';
 import { taskFileSlug } from '../../time-tracker/slug';
+import { pickMany } from '../../../shared/quick-input';
 
 type IncomingMessage =
     | { type: 'ready' }
@@ -208,10 +209,7 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
                 if (uri) {
                     const column = this.resolveSecondaryColumn();
                     const document = await vscode.workspace.openTextDocument(uri);
-                    await vscode.window.showTextDocument(document, { viewColumn: column });
-                    if (column === vscode.ViewColumn.Beside) {
-                        this.secondaryColumn = vscode.window.tabGroups.activeTabGroup.viewColumn;
-                    }
+                    await vscode.window.showTextDocument(document, TASK_TAB_OPTIONS);
                 }
                 return;
             }

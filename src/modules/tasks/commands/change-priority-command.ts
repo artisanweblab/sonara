@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { TaskStore } from '../store/task-store';
 import { updateFrontmatter } from '../parser/update-frontmatter';
 import { PRIORITIES, PRIORITY_LABELS, TaskPriority } from '../types';
+import { pickOne } from '../../../shared/quick-input';
 
 export async function executeChangePriority(store: TaskStore, fsPath: string): Promise<void> {
     const task = store.getTaskByPath(fsPath);
@@ -16,7 +17,7 @@ export async function executeChangePriority(store: TaskStore, fsPath: string): P
         picked: task.priority === p,
     }));
 
-    const picked = await vscode.window.showQuickPick(items, {
+    const picked = await pickOne(items, {
         title: `Priority for "${task.title}"`,
         placeHolder: `Current: ${PRIORITY_LABELS[task.priority]}`,
         ignoreFocusOut: true,

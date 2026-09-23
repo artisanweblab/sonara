@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { exec } from 'child_process';
 import { ActiveProject } from '../../shared/active-project';
+import { askText, pickOne } from '../../shared/quick-input';
 
 const USER_KEY_STATE = 'sonara.timeTracker.userKey';
 
@@ -30,7 +31,7 @@ export class IdentityService {
         }
         items.push({ label: 'Enter name manually', description: 'arbitrary string' });
 
-        const picked = await vscode.window.showQuickPick(items, {
+        const picked = await pickOne(items, {
             title: 'Sonara Time Tracker: identify user',
             placeHolder: 'How should we label your time-tracking data?',
         });
@@ -41,7 +42,7 @@ export class IdentityService {
         if (picked.label.startsWith('Use git email') && gitEmail) {
             raw = gitEmail;
         } else {
-            raw = await vscode.window.showInputBox({
+            raw = await askText({
                 title: 'Sonara Time Tracker',
                 prompt: 'Enter a name to identify your time-tracking data',
                 validateInput: value => (value.trim().length === 0 ? 'Name cannot be empty' : null),
