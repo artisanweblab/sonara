@@ -12,10 +12,11 @@ title: Short task title
 status: inbox
 priority: medium
 sprint: 2026-W19
-labels: [auth, bug]
-summary: "One short sentence describing the task"
+labels:
+  - auth
+  - bug
+summary: One short sentence describing the task
 created: 2026-04-27T12:00:00.000Z
-updated: 2026-04-27T12:00:00.000Z
 ---
 
 <!-- Sonara task. Format and rules: .vscode/sonara/tasks/README.md -->
@@ -27,6 +28,16 @@ Free-form markdown body.
 - One blank line between the closing \`---\`, the HTML comment, and the body.
 - Filename: \`kebab-case\` derived from the title, \`.md\` extension. File lives directly in \`.vscode/sonara/tasks/\`.
 
+## Frontmatter formatting
+
+Sonara rewrites the whole frontmatter whenever it changes a field (status, priority, sprint, labels). Write it exactly the way Sonara writes it, otherwise the first such change reformats the task:
+
+- Fields in the order of the example above. A field added later goes after the existing ones.
+- \`labels\` as a block list, one \`  - label\` per line. Never the \`[a, b]\` form. No labels - leave the field out.
+- Strings without quotes. Use single quotes when the value contains any of \`, : [ ] { }\` or \` #\`, starts with one of \`- ? & * ! | > ' " % @ #\` or a backtick, starts or ends with a space, or reads as a number, \`true\`/\`false\`/\`null\` or a date. Double any \`'\` inside single quotes (\`'It''s: done'\`). Other punctuation (\`; ( ) . / - " '\` inside the text) needs no quotes.
+- Every value at most 78 characters. A longer one is folded by Sonara onto several lines, so keep \`title\` and \`summary\` short.
+- \`created\` as full ISO with milliseconds and \`Z\`, no quotes: \`2026-04-27T12:00:00.000Z\`.
+
 ## Frontmatter
 
 | Field | Required | Notes |
@@ -35,10 +46,9 @@ Free-form markdown body.
 | \`status\` | yes | see Workflow |
 | \`priority\` | no | default \`medium\` |
 | \`sprint\` | no | free string (\`2026-W19\`, \`sprint-12\`, \`release-0.3\`); one per task |
-| \`labels\` | no | array of free strings |
-| \`summary\` | no | 1-2 sentence description shown in the task list. **Always wrap in double quotes.** If omitted, the first paragraph of the body is used |
+| \`labels\` | no | block list of free strings |
+| \`summary\` | no | one short sentence shown in the task list, at most 78 characters. If omitted, the first paragraph of the body is used |
 | \`created\` | yes | ISO, set automatically |
-| \`updated\` | no | ISO, update on every change |
 
 Set \`summary\` explicitly when the body starts with a checklist or heading.
 
@@ -68,7 +78,6 @@ The split between \`done\` and \`released\` exists because work is often shipped
 
 - Default \`status\` for new tasks: \`inbox\`. Never put a new task straight into a later stage without being asked.
 - When merging or rewriting a task, reset \`status\` to \`inbox\` and ask the user where it belongs.
-- Update \`updated\` on every change.
 - Move through stages in order. Never write directly to \`done\` or \`released\` without going through \`review\`, unless the user explicitly skips it.
 - Cancelled work -> \`cancelled\` with a short reason in the body.
 - Don't modify other tasks without an explicit request.

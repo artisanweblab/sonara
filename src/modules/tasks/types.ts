@@ -44,7 +44,6 @@ export interface Task {
     sprint: string | null;
     labels: string[];
     created: string | null;
-    updated: string | null;
     summary: string;
     body: string;
 }

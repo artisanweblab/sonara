@@ -24,5 +24,5 @@ export async function executeChangeStatus(store: TaskStore, fsPath: string): Pro
     if (!picked || task.status === picked.id) {
         return;
     }
-    await updateFrontmatter(task.fileUri, { status: picked.id, updated: new Date() });
+    await updateFrontmatter(task.fileUri, { status: picked.id });
 }
