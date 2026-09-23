@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { addCancelButton } from '../../../shared/quick-input';
 
 const CREATE_ID = '__create__';
 const DONE_ID = '__done__';
@@ -42,6 +43,7 @@ export async function runFilterablePicker(opts: FilterablePickerOptions): Promis
         picker.title = opts.title;
         picker.placeholder = opts.placeholder;
         picker.ignoreFocusOut = true;
+        addCancelButton(picker);
         picker.matchOnDescription = false;
         picker.matchOnDetail = false;
 

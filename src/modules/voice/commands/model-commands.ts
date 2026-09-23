@@ -17,6 +17,7 @@ import {
 import { buildLanguageQuickPickItems } from '../language-picker';
 import { ApiClient } from '../server/api-client';
 import { modelsDir as serverModelsDir } from '../../../shared/server-runtime';
+import { pickOne } from '../../../shared/quick-input';
 
 function reloadModelFromConfig(
     apiClient: ApiClient,
@@ -73,7 +74,7 @@ export function registerModelCommands(deps: CommandDeps): void {
                 };
             });
 
-            const picked = await vscode.window.showQuickPick(items, {
+            const picked = await pickOne(items, {
                 placeHolder: 'Select Whisper model',
                 matchOnDetail: true,
             });
@@ -107,7 +108,7 @@ export function registerModelCommands(deps: CommandDeps): void {
             const config = vscode.workspace.getConfiguration(VOICE_CONFIG_SECTION);
             const currentLanguage = config.get<string>('language', VOICE_DEFAULTS.language);
 
-            const picked = await vscode.window.showQuickPick(
+            const picked = await pickOne(
                 buildLanguageQuickPickItems(currentLanguage, '(current)'),
                 { placeHolder: 'Select transcription language' },
             );
@@ -157,7 +158,7 @@ export function registerModelCommands(deps: CommandDeps): void {
                 );
             }
 
-            const picked = await vscode.window.showQuickPick(items, {
+            const picked = await pickOne(items, {
                 placeHolder: setupMode === 'gpu'
                     ? 'Select compute device'
                     : 'Select compute device (GPU options disabled: CPU-only setup)',
@@ -200,7 +201,7 @@ export function registerModelCommands(deps: CommandDeps): void {
                     detail: MODEL_DESCRIPTIONS[model].detail,
                 };
             });
-            const picked = await vscode.window.showQuickPick(items, {
+            const picked = await pickOne(items, {
                 placeHolder: 'Select model to download',
                 matchOnDetail: true,
             });

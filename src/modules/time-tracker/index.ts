@@ -8,6 +8,7 @@ import { IdentityService } from './identity-service';
 import { TimerService } from './timer-service';
 import { taskFileSlug } from './slug';
 import { TimeTrackerStatusBar } from './status-bar';
+import { pickOne } from '../../shared/quick-input';
 
 const PRODUCT = 'Sonara Time Tracker';
 
@@ -75,7 +76,7 @@ export async function registerTimeTrackerModule(
                 await vscode.window.showInformationMessage('No tasks available to track.');
                 return;
             }
-            const picked = await vscode.window.showQuickPick(items, {
+            const picked = await pickOne(items, {
                 title: 'Start time tracking',
                 placeHolder: 'Pick a task',
             });
@@ -103,7 +104,7 @@ export async function registerTimeTrackerModule(
                 { id: 'stop', label: '$(debug-stop) Stop timer', description: slug },
                 { id: 'switch', label: '$(arrow-swap) Switch to another task', description: 'Pick another task to track' },
             ];
-            const picked = await vscode.window.showQuickPick(items, {
+            const picked = await pickOne(items, {
                 title: 'Time tracker',
                 placeHolder: `Active: ${slug}`,
             });

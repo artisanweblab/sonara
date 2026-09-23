@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { ActiveProject } from './active-project';
+import { pickOne } from './quick-input';
 
 export const ACTIVE_PROJECT_PICK_COMMAND = 'sonara.activeProject.pick';
 
@@ -20,7 +21,7 @@ export function registerActiveProjectPicker(
                 description: f.uri.fsPath,
                 folder: f,
             }));
-            const picked = await vscode.window.showQuickPick(items, {
+            const picked = await pickOne(items, {
                 title: 'Switch Active Project',
                 placeHolder: 'Select the active project folder',
             });

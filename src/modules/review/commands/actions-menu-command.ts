@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { LEVEL_LABELS, REVIEW_LEVELS, ReviewLevel } from '../types';
 import { ReviewNode } from '../view/review-node';
+import { pickOne } from '../../../shared/quick-input';
 
 interface ActionItem extends vscode.QuickPickItem {
     command?: string;
@@ -55,7 +56,7 @@ export async function executeShowActions(node: ReviewNode | undefined, selection
         return;
     }
     const actions = node.type === 'level' ? moveActions(node) : [...moveActions(node), ...fileActions()];
-    const picked = await vscode.window.showQuickPick(actions, { title: nodeTitle(node), placeHolder: 'Pick an action' });
+    const picked = await pickOne(actions, { title: nodeTitle(node), placeHolder: 'Pick an action' });
     if (picked?.command) {
         await vscode.commands.executeCommand(picked.command, node, selection);
     }

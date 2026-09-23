@@ -15,6 +15,7 @@ import { buildInitialPrompt, loadVocabularyFromFile } from '../webview/voice-log
 import { transcriptsDir, vocabularyFile, ensureSonaraProject } from '../../../shared/project-layout';
 import { atomicWrite, openInEditor } from '../../../shared/fs-utils';
 import { TranscriptionCancelledError } from '../server/api-client';
+import { pickOne } from '../../../shared/quick-input';
 
 const MEDIA_FILTERS = {
     'Audio / Video': ['mp3', 'mp4', 'mkv', 'webm', 'wav', 'm4a', 'flac', 'ogg', 'mov', 'avi', 'aac', 'opus'],
@@ -70,7 +71,7 @@ export function registerTranscribeFileCommand(deps: CommandDeps): vscode.Disposa
         const configuredLanguage = config.get<string>('language', VOICE_DEFAULTS.language);
         const model = config.get<string>('model', VOICE_DEFAULTS.model);
 
-        const languagePick = await vscode.window.showQuickPick(
+        const languagePick = await pickOne(
             buildLanguageQuickPickItems(configuredLanguage, '(default)'),
             {
                 placeHolder: `Language for "${sourceName}" (default: ${LANGUAGE_LABELS[configuredLanguage] ?? configuredLanguage})`,

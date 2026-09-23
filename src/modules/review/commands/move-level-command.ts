@@ -5,6 +5,7 @@ import { ReviewServiceHolder } from '../review-service-holder';
 import { LEVEL_LABELS, REVIEW_LEVELS, REVIEW_LEVELS_TOP_DOWN, ReviewLevel, reviewLevelRank } from '../types';
 import { ReviewNode } from '../view/review-node';
 import { ReviewTreeProvider } from '../view/review-tree-provider';
+import { pickOne } from '../../../shared/quick-input';
 
 export type MoveDirection = 'up' | 'down' | 'pick' | ReviewLevel;
 
@@ -30,7 +31,7 @@ export async function pickLevel(current: ReviewLevel): Promise<ReviewLevel | nul
         label: LEVEL_LABELS[level],
         description: level === current ? 'current' : undefined,
     }));
-    const picked = await vscode.window.showQuickPick(items, { title: 'Move to Level', placeHolder: 'Pick a review level' });
+    const picked = await pickOne(items, { title: 'Move to Level', placeHolder: 'Pick a review level' });
     return picked ? picked.level : null;
 }
 
