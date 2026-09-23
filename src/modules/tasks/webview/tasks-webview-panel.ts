@@ -106,12 +106,12 @@ const NO_SPRINT_FILTER_VALUE = '__none__';
 const NO_SPRINT_FILTER_LABEL = 'No sprint';
 const NO_LABELS_FILTER_VALUE = '__none__';
 const NO_LABELS_FILTER_LABEL = 'No labels';
+const TASK_TAB_OPTIONS: vscode.TextDocumentShowOptions = { viewColumn: vscode.ViewColumn.Active, preview: true };
 
 export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Disposable {
     public static readonly VIEW_ID = 'sonara.tasks';
 
     private view: vscode.WebviewView | undefined;
-    private secondaryColumn: vscode.ViewColumn | undefined;
     private readonly disposables: vscode.Disposable[] = [];
     private timer: TimerService | undefined;
     private totalsBySlug: Record<string, number> = {};
@@ -200,14 +200,13 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
             case 'openPreview': {
                 const uri = this.taskUri(msg.id);
                 if (uri) {
-                    await this.openMarkdownPreviewReusing(uri);
+                    await vscode.commands.executeCommand('vscode.openWith', uri, 'vscode.markdown.preview.editor', TASK_TAB_OPTIONS);
                 }
                 return;
             }
             case 'openEditor': {
                 const uri = this.taskUri(msg.id);
                 if (uri) {
-                    const column = this.resolveSecondaryColumn();
                     const document = await vscode.workspace.openTextDocument(uri);
                     await vscode.window.showTextDocument(document, TASK_TAB_OPTIONS);
                 }
@@ -435,7 +434,7 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
             await vscode.window.showInformationMessage(`No ${kind} values available.`);
             return;
         }
-        const picked = await vscode.window.showQuickPick(items, { canPickMany: true, title });
+        const picked = await pickMany(items, { title });
         if (!picked) return;
         const pickedValues = picked.map(it => it.description as string);
         const next: TaskFilters = { ...current };
@@ -579,27 +578,6 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
                 noLabelsFilterLabel: NO_LABELS_FILTER_LABEL,
             },
         };
-    }
-
-    private resolveSecondaryColumn(): vscode.ViewColumn {
-        if (this.secondaryColumn !== undefined) {
-            const stillOpen = vscode.window.tabGroups.all.some(
-                g => g.viewColumn === this.secondaryColumn && g.tabs.length > 0,
-            );
-            if (stillOpen) {
-                return this.secondaryColumn;
-            }
-            this.secondaryColumn = undefined;
-        }
-        return vscode.ViewColumn.Beside;
-    }
-
-    private async openMarkdownPreviewReusing(uri: vscode.Uri): Promise<void> {
-        const column = this.resolveSecondaryColumn();
-        await vscode.commands.executeCommand('vscode.openWith', uri, 'vscode.markdown.preview.editor', column);
-        if (column === vscode.ViewColumn.Beside) {
-            this.secondaryColumn = vscode.window.tabGroups.activeTabGroup.viewColumn;
-        }
     }
 
     public dispose(): void {
