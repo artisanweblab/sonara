@@ -103,6 +103,8 @@ export interface LevelChange {
     line: number;
     lineCount: number;
     label: string | null;
+    isExistence: boolean;
+    isMode: boolean;
 }
 
 export type LevelDocumentSideName = 'before' | 'after';

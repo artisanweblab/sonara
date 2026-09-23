@@ -41,7 +41,7 @@ export class FrontierEvaluator {
                 after: text,
                 isBeforeMissing: false,
                 isAfterMissing: false,
-                changes: hasChange ? [{ id: fileChangeId(), line: 0, lineCount: 0, label: 'whole file' }] : [],
+                changes: hasChange ? [{ id: fileChangeId(), line: 0, lineCount: 0, label: 'whole file', isExistence: false, isMode: false }] : [],
                 generation: scanGeneration(file, head),
             };
         }
@@ -52,6 +52,8 @@ export class FrontierEvaluator {
             line: change.range ? firstLineIndex(change.range.newStart, change.range.newLines) : 0,
             lineCount: change.range?.newLines ?? 0,
             label: change.label,
+            isExistence: change.isExistence,
+            isMode: change.isMode,
         }));
         if (stack.kind === 'opaque') {
             return {
