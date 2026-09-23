@@ -76,7 +76,7 @@
         "command": "sonara.review.openPreview",
         "title": "Open Preview",
         "category": "Sonara",
-        "icon": "$(open-preview)"
+        "icon": "$(preview)"
       },
       {
         "command": "sonara.review.moveChange",
