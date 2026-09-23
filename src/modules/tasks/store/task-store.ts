@@ -156,9 +156,16 @@ export class TaskStore implements vscode.Disposable {
         const watcher = vscode.workspace.createFileSystemWatcher(
             new vscode.RelativePattern(this.tasksDir, '**/*.md'),
         );
-        watcher.onDidCreate(uri => void this.handleFileChange(uri));
-        watcher.onDidChange(uri => void this.handleFileChange(uri));
-        watcher.onDidDelete(uri => this.handleFileDelete(uri));
+        const isOnDisk = (uri: vscode.Uri): boolean => uri.scheme === this.tasksDir?.scheme;
+        watcher.onDidCreate(uri => {
+            if (isOnDisk(uri)) void this.handleFileChange(uri);
+        });
+        watcher.onDidChange(uri => {
+            if (isOnDisk(uri)) void this.handleFileChange(uri);
+        });
+        watcher.onDidDelete(uri => {
+            if (isOnDisk(uri)) this.handleFileDelete(uri);
+        });
         this.watcher = watcher;
     }
 
