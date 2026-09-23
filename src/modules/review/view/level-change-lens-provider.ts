@@ -26,6 +26,7 @@ export class LevelChangeLensProvider implements vscode.CodeLensProvider, vscode.
             return [];
         }
         const lenses: vscode.CodeLens[] = [];
+        const hasContentChange = shown.changes.some(change => !change.isExistence && change.label === null);
         for (const change of shown.changes) {
             const reference: LevelChangeReference = {
                 repoPath: address.repoPath,
@@ -34,33 +35,44 @@ export class LevelChangeLensProvider implements vscode.CodeLensProvider, vscode.
                 generation: shown.generation,
             };
             const range = this.rangeFor(document, change);
-            lenses.push(...this.lensesFor(range, reference, address.level, change.label));
+            if (change.isExistence && hasContentChange) {
+                lenses.push(new vscode.CodeLens(range, { title: change.label ?? '', command: '' }));
+                continue;
+            }
+            lenses.push(...this.lensesFor(range, reference, address.level, change.label, change.isMode));
         }
         return lenses;
     }
 
-    private lensesFor(range: vscode.Range, reference: LevelChangeReference, level: ReviewLevel, label: string | null): vscode.CodeLens[] {
+    private lensesFor(
+        range: vscode.Range,
+        reference: LevelChangeReference,
+        level: ReviewLevel,
+        label: string | null,
+        isMode: boolean,
+    ): vscode.CodeLens[] {
         const rank = reviewLevelRank(level);
+        const what = isMode ? 'Permissions ' : '';
         const lenses: vscode.CodeLens[] = [];
         if (label) {
             lenses.push(new vscode.CodeLens(range, { title: label, command: '' }));
         }
         if (rank < REVIEW_LEVELS.length - 1) {
             lenses.push(new vscode.CodeLens(range, {
-                title: 'Move Up',
+                title: `Move ${what}Up`,
                 command: MOVE_CHANGE_COMMAND,
                 arguments: [reference, 'up'],
             }));
         }
         if (rank > 0) {
             lenses.push(new vscode.CodeLens(range, {
-                title: 'Move Down',
+                title: `Move ${what}Down`,
                 command: MOVE_CHANGE_COMMAND,
                 arguments: [reference, 'down'],
             }));
         }
         lenses.push(new vscode.CodeLens(range, {
-            title: 'Move to Level...',
+            title: `Move ${what}to Level...`,
             command: MOVE_CHANGE_COMMAND,
             arguments: [reference, 'pick'],
         }));

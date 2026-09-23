@@ -17,6 +17,8 @@ export interface StateLevelChange {
     id: string;
     range: RangeHunk | null;
     label: string | null;
+    isExistence: boolean;
+    isMode: boolean;
     state: ReviewAtomState;
 }
 
@@ -51,6 +53,7 @@ export function levelChanges(path: string, stack: FileStack, level: ReviewLevel)
     const below = stack.modes[rank + 1];
     const above = stack.modes[rank];
     const modeLabel = below !== above ? describeModeChange(below, above) : null;
+    const isExistence = below === MISSING_MODE || above === MISSING_MODE;
     const status = statusOf(below, above, false);
     if (stack.kind === 'opaque') {
         const contentChanged = layerHash(stack.content[rank + 1]) !== layerHash(stack.content[rank]);
@@ -60,7 +63,7 @@ export function levelChanges(path: string, stack: FileStack, level: ReviewLevel)
         const label = contentChanged && modeLabel && below !== MISSING_MODE && above !== MISSING_MODE
             ? `content changed, ${modeLabel}`
             : modeLabel ?? 'content changed';
-        return [{ id: fileChangeId(), range: null, label, state: fileAtom(path, level, status) }];
+        return [{ id: fileChangeId(), range: null, label, isExistence, isMode: false, state: fileAtom(path, level, status) }];
     }
     const before = stack.content[rank + 1];
     const after = stack.content[rank];
@@ -72,10 +75,10 @@ export function levelChanges(path: string, stack: FileStack, level: ReviewLevel)
         const ordinal = occurrences.get(key) ?? 0;
         occurrences.set(key, ordinal + 1);
         const id = `${key}#${ordinal}`;
-        return { id, range, label: null, state: { level, status, atom: { path, id } } };
+        return { id, range, label: null, isExistence: false, isMode: false, state: { level, status, atom: { path, id } } };
     });
     if (modeLabel) {
-        changes.push({ id: fileChangeId(), range: null, label: modeLabel, state: fileAtom(path, level, status) });
+        changes.push({ id: fileChangeId(), range: null, label: modeLabel, isExistence, isMode: !isExistence, state: fileAtom(path, level, status) });
     }
     return changes;
 }
