@@ -124,13 +124,13 @@
       },
       {
         "command": "sonara.review.expandFolder",
-        "title": "Expand Folder",
+        "title": "Expand All",
         "category": "Sonara",
         "icon": "$(expand-all)"
       },
       {
         "command": "sonara.review.collapseFolder",
-        "title": "Collapse Folder",
+        "title": "Collapse All",
         "category": "Sonara",
         "icon": "$(collapse-all)"
       },
@@ -490,12 +490,12 @@
       "view/item/context": [
         {
           "command": "sonara.review.expandFolder",
-          "when": "view == sonara.review && viewItem =~ /^reviewFolder\\./",
+          "when": "view == sonara.review && viewItem =~ /^review(Level|Folder)\\./",
           "group": "inline@1"
         },
         {
           "command": "sonara.review.collapseFolder",
-          "when": "view == sonara.review && viewItem =~ /^reviewFolder\\./",
+          "when": "view == sonara.review && viewItem =~ /^review(Level|Folder)\\./",
           "group": "inline@2"
         },
         {
@@ -546,12 +546,12 @@
         {
           "command": "sonara.review.moveAllUp",
           "when": "view == sonara.review && viewItem =~ /^reviewLevel\\.(new|queued|read|verified)$/",
-          "group": "inline@1"
+          "group": "inline@3"
         },
         {
           "command": "sonara.review.moveAllDown",
           "when": "view == sonara.review && viewItem =~ /^reviewLevel\\.(queued|read|verified|staged)$/",
-          "group": "inline@2"
+          "group": "inline@4"
         },
         {
           "command": "sonara.review.moveAllUp",

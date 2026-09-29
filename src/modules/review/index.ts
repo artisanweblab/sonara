@@ -24,6 +24,8 @@ import { LevelDocumentProvider } from './view/level-document-provider';
 import { ReviewDiffOpener } from './view/review-diff-opener';
 import { ReviewNode } from './view/review-node';
 import { OPEN_LEVEL_DIFF_COMMAND, ReviewTreeProvider } from './view/review-tree-provider';
+import { summarizeLevel } from './view/review-tree-builder';
+import { ReviewStatusDecorations } from './view/review-status-decorations';
 import { ReviewStatusBar } from './view/review-status-bar';
 
 const FOCUS_COMMAND = `${ReviewTreeProvider.VIEW_ID}.focus`;
@@ -97,15 +99,17 @@ export function registerReviewModule(context: vscode.ExtensionContext, activePro
         showCollapseAll: true,
     });
     context.subscriptions.push(
+        vscode.window.registerFileDecorationProvider(new ReviewStatusDecorations()),
         treeView.onDidExpandElement(event => provider.rememberExpanded(event.element, true)),
         treeView.onDidCollapseElement(event => provider.rememberExpanded(event.element, false)),
     );
     const updateView = (): void => {
         const service = holder.get();
         treeView.message = service && !service.isActive() && service.getIdleReason() ? inactiveMessage(service) : undefined;
-        const newFiles = new Set((service?.getAtomsByLevel().get('new') ?? []).map(state => state.atom.path)).size;
+        const newSummary = summarizeLevel(service?.getAtomsByLevel().get('new') ?? []);
+        const newFiles = newSummary.fileCount;
         treeView.badge = newFiles > 0
-            ? { value: newFiles, tooltip: `${newFiles} ${newFiles === 1 ? 'file has' : 'files have'} changes on New` }
+            ? { value: newFiles, tooltip: `${newFiles} ${newFiles === 1 ? 'file has' : 'files have'} changes on New, lines: +${newSummary.addedLines} -${newSummary.removedLines}` }
             : undefined;
     };
     context.subscriptions.push(holder.onDidChange(updateView));

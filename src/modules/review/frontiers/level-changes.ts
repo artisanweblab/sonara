@@ -31,7 +31,7 @@ export function fileChangeId(): string {
 }
 
 function fileAtom(path: string, level: ReviewLevel, status: string): ReviewAtomState {
-    return { level, status, atom: { path, id: fileChangeId() } };
+    return { level, status, atom: { path, id: fileChangeId() }, addedLines: 0, removedLines: 0 };
 }
 
 function statusOf(below: string, above: string, isUnmerged: boolean): string {
@@ -75,7 +75,7 @@ export function levelChanges(path: string, stack: FileStack, level: ReviewLevel)
         const ordinal = occurrences.get(key) ?? 0;
         occurrences.set(key, ordinal + 1);
         const id = `${key}#${ordinal}`;
-        return { id, range, label: null, isExistence: false, isMode: false, state: { level, status, atom: { path, id } } };
+        return { id, range, label: null, isExistence: false, isMode: false, state: { level, status, atom: { path, id }, addedLines: range.newLines, removedLines: range.oldLines } };
     });
     if (modeLabel) {
         changes.push({ id: fileChangeId(), range: null, label: modeLabel, isExistence, isMode: !isExistence, state: fileAtom(path, level, status) });
@@ -96,10 +96,12 @@ export function gitAtoms(file: ScannedFile): ReviewAtomState[] {
     const newStatus = statusOf(indexMode, worktreeMode, isUnmerged);
     const add = (level: ReviewLevel, hasChange: boolean, hunks: ScannedFile['stagedHunks']): void => {
         const status = level === 'staged' ? stagedStatus : newStatus;
-        hunks.forEach((_hunk, index) => atoms.push({
+        hunks.forEach((hunk, index) => atoms.push({
             level,
             status,
             atom: { path: file.path, id: `git:${level}:${index}` },
+            addedLines: hunk.newLines,
+            removedLines: hunk.oldLines,
         }));
         if (hasChange && hunks.length === 0) {
             atoms.push(fileAtom(file.path, level, status));

@@ -4,7 +4,8 @@ import { ReviewServiceHolder } from '../review-service-holder';
 import { LEVEL_LABELS, REVIEW_LEVELS_TOP_DOWN, ReviewLevel } from '../types';
 import { FolderNode, LevelFileEntry, LevelNode, ReviewNode } from './review-node';
 import { LevelSelection } from '../review-level-mover';
-import { TreeLayout, buildLevelChildren, collectFiles, collectStates } from './review-tree-builder';
+import { treeItemUri } from './review-status-decorations';
+import { TreeLayout, buildLevelChildren, collectFiles, LevelSummary, collectStates, summarizeLevel } from './review-tree-builder';
 
 export const OPEN_LEVEL_DIFF_COMMAND = 'sonara.review.openLevelDiff';
 
@@ -19,6 +20,39 @@ function expansionKey(node: ReviewNode): string | null {
         return `level/${node.level}`;
     }
     return node.type === 'folder' ? folderKey(node.level, node.displayPath) : null;
+}
+
+const FILE_STATUSES: readonly { status: string; letter: string; word: string }[] = [
+    { status: 'A', letter: 'A', word: 'added' },
+    { status: 'M', letter: 'M', word: 'modified' },
+    { status: 'D', letter: 'D', word: 'deleted' },
+    { status: 'U', letter: 'U', word: 'unmerged' },
+];
+
+function describeLevel(summary: LevelSummary): string {
+    const byStatus = FILE_STATUSES
+        .filter(entry => (summary.filesByStatus.get(entry.status) ?? 0) > 0)
+        .map(entry => `${entry.letter}${summary.filesByStatus.get(entry.status)}`)
+        .join(' ');
+    const files = byStatus ? `files: ${summary.fileCount} (${byStatus})` : `files: ${summary.fileCount}`;
+    return `${files} · ${describeLines(summary)}`;
+}
+
+function describeLines(summary: LevelSummary): string {
+    return `lines: +${summary.addedLines} -${summary.removedLines}`;
+}
+
+function levelTooltip(summary: LevelSummary): string {
+    const byStatus = FILE_STATUSES
+        .filter(entry => (summary.filesByStatus.get(entry.status) ?? 0) > 0)
+        .map(entry => `${summary.filesByStatus.get(entry.status)} ${entry.word}`)
+        .join(', ');
+    const files = byStatus ? `${countOf(summary.fileCount, 'file')}: ${byStatus}` : countOf(summary.fileCount, 'file');
+    return `${files}\n${countOf(summary.addedLines, 'line')} added, ${countOf(summary.removedLines, 'line')} removed`;
+}
+
+function countOf(count: number, noun: string): string {
+    return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, vscode.Disposable {
@@ -55,20 +89,21 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
     }
 
     setSubtreeExpanded(node: ReviewNode, isExpanded: boolean): void {
-        if (node.type !== 'folder') {
+        const key = expansionKey(node);
+        if (!key) {
             return;
         }
-        const apply = (folder: FolderNode): void => {
-            const key = folderKey(folder.level, folder.displayPath);
-            this.expansion.set(key, isExpanded);
-            this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1);
-            for (const child of folder.children) {
-                if (child.type === 'folder') {
-                    apply(child);
+        const apply = (target: ReviewNode, targetKey: string): void => {
+            this.expansion.set(targetKey, isExpanded);
+            this.revisions.set(targetKey, (this.revisions.get(targetKey) ?? 0) + 1);
+            for (const child of this.getChildren(target)) {
+                const childKey = expansionKey(child);
+                if (childKey) {
+                    apply(child, childKey);
                 }
             }
         };
-        apply(node);
+        apply(node, key);
         this.emitter.fire(undefined);
     }
 
@@ -103,7 +138,10 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
                 const item = new vscode.TreeItem(node.label, state);
                 item.id = `folder/${key}#${this.revisions.get(key) ?? 0}`;
                 item.iconPath = vscode.ThemeIcon.Folder;
-                item.resourceUri = vscode.Uri.file(this.absoluteDisplayPath(node.displayPath));
+                item.resourceUri = treeItemUri(this.absoluteDisplayPath(node.displayPath), null);
+                const summary = summarizeLevel(collectStates(node));
+                item.description = `files: ${summary.fileCount} · ${describeLines(summary)}`;
+                item.tooltip = `${node.displayPath}\n${levelTooltip(summary)}`;
                 item.contextValue = `reviewFolder.${node.level}`;
                 return item;
             }
@@ -111,11 +149,16 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
                 const item = new vscode.TreeItem(path.posix.basename(node.displayPath), vscode.TreeItemCollapsibleState.None);
                 item.id = `file/${node.level}/${node.path}`;
                 item.iconPath = vscode.ThemeIcon.File;
-                item.resourceUri = vscode.Uri.file(this.absoluteDisplayPath(node.displayPath));
+                item.resourceUri = treeItemUri(this.absoluteDisplayPath(node.displayPath), node.status);
                 const directory = path.posix.dirname(node.displayPath);
                 const location = this.currentLayout() === 'list' && directory !== '.' ? directory : '';
-                item.description = [node.status, location].filter(part => part !== '').join(' · ') || undefined;
-                item.tooltip = node.displayPath;
+                const summary = summarizeLevel(node.states);
+                const hasLines = summary.addedLines + summary.removedLines > 0;
+                const lines = hasLines ? `+${summary.addedLines} -${summary.removedLines}` : '';
+                item.description = [lines, location].filter(part => part !== '').join(' · ') || undefined;
+                item.tooltip = hasLines
+                    ? `${node.displayPath}\n${countOf(summary.addedLines, 'line')} added, ${countOf(summary.removedLines, 'line')} removed`
+                    : node.displayPath;
                 item.contextValue = `reviewFile.${node.level}`;
                 item.command = { command: OPEN_LEVEL_DIFF_COMMAND, title: 'Open Level Changes', arguments: [node.path, node.level] };
                 return item;
@@ -147,16 +190,15 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
     private levelItem(node: LevelNode): vscode.TreeItem {
         const level = node.level;
         const states = collectStates(node);
-        const count = states.length;
-        const fileCount = new Set(states.map(entry => entry.atom.path)).size;
+        const summary = summarizeLevel(states);
         const isExpanded = this.expansion.get(`level/${level}`) ?? level === 'new';
-        const state = count === 0
+        const state = states.length === 0
             ? vscode.TreeItemCollapsibleState.None
             : isExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
         const item = new vscode.TreeItem(LEVEL_LABELS[level], state);
-        item.id = `level/${level}`;
-        item.description = `files: ${fileCount} · changes: ${count}`;
-        item.tooltip = `${fileCount} files, ${count} changes`;
+        item.id = `level/${level}#${this.revisions.get(`level/${level}`) ?? 0}`;
+        item.description = describeLevel(summary);
+        item.tooltip = levelTooltip(summary);
         item.contextValue = `reviewLevel.${level}`;
         return item;
     }
