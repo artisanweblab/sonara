@@ -124,6 +124,8 @@ export interface ReviewAtomState {
     atom: ReviewAtom;
     level: ReviewLevel;
     status: string;
+    addedLines: number;
+    removedLines: number;
 }
 
 export interface ReviewFileState {

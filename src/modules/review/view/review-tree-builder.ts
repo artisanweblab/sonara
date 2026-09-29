@@ -97,3 +97,27 @@ export function collectStates(node: ReviewNode): ReviewAtomState[] {
             return node.entries.flatMap(entry => entry.states);
     }
 }
+
+export interface LevelSummary {
+    fileCount: number;
+    filesByStatus: Map<string, number>;
+    addedLines: number;
+    removedLines: number;
+}
+
+export function summarizeLevel(states: ReviewAtomState[]): LevelSummary {
+    const statusByPath = new Map<string, string>();
+    for (const state of states) {
+        statusByPath.set(state.atom.path, state.status);
+    }
+    const filesByStatus = new Map<string, number>();
+    for (const status of statusByPath.values()) {
+        filesByStatus.set(status, (filesByStatus.get(status) ?? 0) + 1);
+    }
+    return {
+        fileCount: statusByPath.size,
+        filesByStatus,
+        addedLines: states.reduce((sum, state) => sum + state.addedLines, 0),
+        removedLines: states.reduce((sum, state) => sum + state.removedLines, 0),
+    };
+}
