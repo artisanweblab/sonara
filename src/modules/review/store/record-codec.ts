@@ -185,6 +185,18 @@ export function textBlobReferences(record: FrontierRecord): string[] {
     return textBlobReferenceEntries(record).map(reference => reference.hash);
 }
 
+export function binaryCopyReferences(record: FrontierRecord): string[] {
+    if (record.kind !== 'opaque') {
+        return [];
+    }
+    return [...STORED_REVIEW_LEVELS.map(level => record.frontiers[level]?.content), record.indexBase?.content]
+        .filter((hash): hash is string => hash !== undefined);
+}
+
+export function keptBlobReferences(record: FrontierRecord): string[] {
+    return [...textBlobReferences(record), ...binaryCopyReferences(record)];
+}
+
 export function legacyBlobReferences(raw: unknown): string[] {
     const layers = isObject(raw) ? raw.layers : null;
     if (!isObject(layers)) {

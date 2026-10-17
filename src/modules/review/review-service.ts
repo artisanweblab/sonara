@@ -61,6 +61,8 @@ export class ReviewService implements vscode.Disposable {
     private passes: ReviewPasses | undefined;
     private collector: BlobGarbageCollector | undefined;
     private isStarted = false;
+    private isOpening = false;
+    private isReopenPending = false;
     private idleReason = 'the review is still starting';
     private isDisposed = false;
 
@@ -85,9 +87,43 @@ export class ReviewService implements vscode.Disposable {
             void vscode.window.showWarningMessage(`Sonara Review needs the built-in Git extension: ${started.reason}. Enable it, then reload the window.`);
             return;
         }
+        this.disposables.push(
+            this.watcher.onDidOpenRepository(() => this.retryOpenRepository(started.gitPath)),
+            this.watcher.onDidChange(change => this.onRepositoryChange(change, started.gitPath)),
+        );
+        await this.openRepository(started.gitPath);
+    }
+
+    private retryOpenRepository(gitPath: string): void {
+        this.openRepository(gitPath).catch(error => {
+            this.logger.error('Review failed to start', error);
+        });
+    }
+
+    private async openRepository(gitPath: string): Promise<void> {
+        if (this.isStarted || this.isDisposed) {
+            return;
+        }
+        if (this.isOpening) {
+            this.isReopenPending = true;
+            return;
+        }
+        this.isOpening = true;
+        try {
+            await this.tryOpenRepository(gitPath);
+        } finally {
+            this.isOpening = false;
+        }
+        if (this.isReopenPending) {
+            this.isReopenPending = false;
+            await this.openRepository(gitPath);
+        }
+    }
+
+    private async tryOpenRepository(gitPath: string): Promise<void> {
         let repoRoot: string;
         try {
-            const [topLevel] = await new GitReader(this.folder.uri.fsPath, this.logger, started.gitPath).lines(['rev-parse', '--show-toplevel']);
+            const [topLevel] = await new GitReader(this.folder.uri.fsPath, this.logger, gitPath).lines(['rev-parse', '--show-toplevel']);
             if (!topLevel) {
                 throw new Error('git returned an empty repository path');
             }
@@ -104,7 +140,7 @@ export class ReviewService implements vscode.Disposable {
             folderPath: this.folder.uri.fsPath,
             repoRoot,
             reviewRoot: reviewDir(this.folder),
-            gitPath: started.gitPath,
+            gitPath,
             store: this.store,
             blobs: this.blobs,
             logger: this.logger,
@@ -118,7 +154,6 @@ export class ReviewService implements vscode.Disposable {
         this.watcher.watchGitOperations(await engine.gitState.resolveGitDir(), await engine.gitState.resolveCommonDir(), await engine.gitState.indexFile());
         this.isStarted = true;
         this.idleReason = '';
-        this.disposables.push(this.watcher.onDidChange(change => this.onRepositoryChange(change)));
         this.isFullPending = true;
         await this.drain();
         this.collector.schedule();
@@ -232,6 +267,9 @@ export class ReviewService implements vscode.Disposable {
     }
 
     private becomeIdle(reason: string): void {
+        if (reason === this.idleReason) {
+            return;
+        }
         this.idleReason = reason;
         this.logger.info(`Review is idle for ${this.folder.uri.fsPath}: ${reason}`);
         this.emitter.fire();
@@ -294,7 +332,13 @@ export class ReviewService implements vscode.Disposable {
         void this.drain();
     }
 
-    private onRepositoryChange(change: RepositoryChange): void {
+    private onRepositoryChange(change: RepositoryChange, gitPath: string): void {
+        if (!this.isStarted) {
+            if (change.isRecheckNeeded) {
+                this.retryOpenRepository(gitPath);
+            }
+            return;
+        }
         this.logger.info(`Repository change: full=${change.isFull} stash=${change.isStashChanged} recheck=${change.isRecheckNeeded} paths=${change.paths.length} recordFiles=${change.recordFiles.length}`);
         this.isFullPending = this.isFullPending || change.isFull;
         this.isStashPending = this.isStashPending || change.isStashChanged;

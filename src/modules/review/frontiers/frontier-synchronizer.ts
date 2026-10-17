@@ -3,7 +3,7 @@ import { GitRepositoryState } from '../git/git-repository-state';
 import { StashReader } from '../git/stash-reader';
 import { ReviewLogger } from '../logging/review-logger';
 import { LegacyRecordMigrator } from '../migration/legacy-record-migrator';
-import { contentHash } from '../model/file-state';
+import { UNMERGED_STATE, contentHash } from '../model/file-state';
 import { HASH_VALUES, SEGMENT_VALUES } from '../model/ladder-values';
 import { rebaseFrontiers } from '../model/level-ladder';
 import { mapLimit } from '../model/map-limit';
@@ -12,11 +12,17 @@ import { RECORD_VERSION } from '../store/record-codec';
 import { RecordChange, RecordPair } from '../store/review-state-store';
 import { DormantRecord, FrontierRecord, ReviewFileState, ScannedFile } from '../types';
 import { toSegments } from '../model/segment-codec';
+import { encodeStack } from './file-stack';
+import { FileStackBuilder } from './file-stack-builder';
 import { EncodedRecord } from './frontier-encoding';
 import { FrontierRepository } from './frontier-repository';
 import { PassStashes } from './pass-stashes';
 
 const SYNC_CONCURRENCY = 32;
+
+function describeFrontiers(record: FrontierRecord | null): string {
+    return record ? Object.keys(record.frontiers).join(',') : 'none';
+}
 
 export interface SynchronizeInput {
     head: string;
@@ -27,12 +33,15 @@ export interface SynchronizeInput {
 }
 
 export class FrontierSynchronizer {
+    private readonly checkedIndexes = new Map<string, string>();
+
     constructor(
         private readonly loader: ContentLoader,
         private readonly gitState: GitRepositoryState,
         private readonly repository: FrontierRepository,
         private readonly migrator: LegacyRecordMigrator,
         private readonly stashReader: StashReader,
+        private readonly stacks: FileStackBuilder,
         private readonly logger: ReviewLogger,
     ) {}
 
@@ -56,9 +65,10 @@ export class FrontierSynchronizer {
                     records.set(repoPath, null);
                     return;
                 }
-                const pair = await this.needsChange(unlocked, file, input, isOperationInProgress)
+                const reconciled = await this.needsChange(unlocked, file, input, isOperationInProgress)
                     ? await this.repository.transact(repoPath, current => this.reconcile(repoPath, current, file, input, isOperationInProgress))
                     : unlocked;
+                const pair = file && !isOperationInProgress ? await this.followIndex(repoPath, reconciled, file, input.head) : reconciled;
                 if (file) {
                     const isUsable = pair.active !== null && pair.active.baseHead === input.head && pair.active.kind === file.kind;
                     records.set(repoPath, isUsable ? pair.active : null);
@@ -216,6 +226,48 @@ export class FrontierSynchronizer {
         }
         this.logger.info(`Sync: ${repoPath} left the change list, frontiers parked as dormant with stash ${stash.oid}: ${Object.keys(active.frontiers).join(',')}`);
         return { ...active, worktreeState, indexState, stashOid: stash.oid };
+    }
+
+    private async followIndex(repoPath: string, pair: RecordPair, file: ScannedFile, head: string): Promise<RecordPair> {
+        const checkedKey = (record: FrontierRecord | null): string => `${head}|${file.indexState}|${recordId(record)}`;
+        if (this.checkedIndexes.get(repoPath) === checkedKey(pair.active)) {
+            return pair;
+        }
+        if (!(await this.indexFollowing(pair.active, file, head))) {
+            this.checkedIndexes.set(repoPath, checkedKey(pair.active));
+            return pair;
+        }
+        let isRewritten = false;
+        const updated = await this.repository.transact(repoPath, async current => {
+            const encoded = await this.indexFollowing(current.active, file, head);
+            isRewritten = encoded !== null;
+            return encoded ? { active: encoded.record, blobs: encoded.blobs } : {};
+        });
+        if (isRewritten) {
+            this.logger.info(`Sync: ${repoPath} staged version changed outside Sonara, frontiers ${describeFrontiers(pair.active)} rewritten onto it: ${describeFrontiers(updated.active)}`);
+        }
+        this.checkedIndexes.set(repoPath, checkedKey(updated.active));
+        return updated;
+    }
+
+    private async indexFollowing(record: FrontierRecord | null, file: ScannedFile, head: string): Promise<EncodedRecord | null> {
+        if (file.isUnreadable || file.indexState === UNMERGED_STATE) {
+            return null;
+        }
+        if (record ? record.baseHead !== head || record.kind !== file.kind : !file.hasStagedChange) {
+            return null;
+        }
+        if (record && !record.indexBase && !file.hasStagedChange) {
+            return null;
+        }
+        const stack = await this.stacks.build(file, head, record);
+        const { head: headSide, index } = stack.snapshot;
+        const baseContent = record?.indexBase?.content ?? contentHash(headSide.content);
+        const baseMode = record?.indexBase?.mode ?? headSide.mode;
+        if (contentHash(index.content) === baseContent && index.mode === baseMode) {
+            return null;
+        }
+        return encodeStack(file.path, head, stack, { content: stack.content.map(layer => [...layer]), modes: stack.modes });
     }
 
     private async rebase(record: FrontierRecord, head: string, file: ScannedFile): Promise<EncodedRecord> {

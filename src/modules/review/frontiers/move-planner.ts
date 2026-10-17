@@ -2,14 +2,13 @@ import type { FileSnapshot, GitSide } from '../git/content-loader';
 import type { IndexTarget } from '../git/index-target';
 import { recordId, staleReason } from '../model/file-generation';
 import { MISSING_MODE, contentHash, sha256 } from '../model/file-state';
-import { HASH_VALUES, SEGMENT_VALUES, Segments } from '../model/ladder-values';
-import { STAGED_RANK, frontiersFromLayers } from '../model/level-ladder';
-import { toBuffer, toSegments } from '../model/segment-codec';
+import { STAGED_RANK } from '../model/level-ladder';
+import { toBuffer } from '../model/segment-codec';
 import { StateLayers, WHOLE_FILE_HUNK, planStateMove } from '../model/state-move-planner';
 import { textBlobReferences } from '../store/record-codec';
 import { FileGeneration, FrontierRecord, RangeHunk, ReviewAtomState, reviewLevelRank } from '../types';
-import { FileStack, buildFileStack, layerHash } from './file-stack';
-import { BlobContents, EncodedRecord, encodeOpaque, encodeText } from './frontier-encoding';
+import { FileStack, buildFileStack, encodeStack, layerHash } from './file-stack';
+import { BlobContents } from './frontier-encoding';
 import { gitAtoms, levelChanges, stackAtoms } from './level-changes';
 import {
     MoveCommand,
@@ -90,16 +89,6 @@ function stagedVersion(stack: FileStack, layers: StateLayers): StagedVersion | n
     return null;
 }
 
-function encode(repoPath: string, head: string, stack: FileStack, layers: StateLayers): EncodedRecord {
-    const modes = frontiersFromLayers(stack.snapshot.head.mode, layers.modes, HASH_VALUES);
-    if (stack.kind === 'opaque') {
-        const content = frontiersFromLayers(contentHash(stack.snapshot.head.content), layers.content.map(layerHash), HASH_VALUES);
-        return encodeOpaque(repoPath, head, { content, modes });
-    }
-    const content = frontiersFromLayers<Segments>(toSegments(stack.snapshot.head.content), layers.content, SEGMENT_VALUES);
-    return encodeText(repoPath, head, { content, modes });
-}
-
 function atomsAfterRecordMove(input: MovePlanInput, record: FrontierRecord | null, blobs: Buffer[]): ReviewAtomState[] {
     const file = input.command.file;
     if (!record) {
@@ -114,7 +103,7 @@ function finish(input: MovePlanInput, stack: FileStack, record: FrontierRecord |
     const { file, source, target } = input.command;
     const isToStaged = reviewLevelRank(target) === STAGED_RANK;
     const writesIndex = isToStaged || reviewLevelRank(source) === STAGED_RANK;
-    const encoded: EncodedRecord = isToStaged ? { record, blobs: [] } : encode(file.path, input.command.generation.head, stack, layers);
+    const encoded = encodeStack(file.path, input.command.generation.head, stack, layers);
     const nextId = recordId(encoded.record);
     const isRecordChanged = nextId !== recordId(record);
     const isIndexChanged = writesIndex

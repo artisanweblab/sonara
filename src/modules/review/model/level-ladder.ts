@@ -11,6 +11,7 @@ export interface LadderValues<T> {
     isSame(a: T, b: T): boolean;
     mergeOverIndex(base: T, index: T, frontier: T): T;
     mergeKeepingOurs(base: T, ours: T, theirs: T): T;
+    restoreUnstaged(base: T, index: T, head: T, worktree: T): T;
 }
 
 export function emptyFrontiers<T>(): LevelFrontiers<T> {
@@ -52,10 +53,11 @@ export function buildStack<T>(head: T, index: T, worktree: T, frontiers: LevelFr
     layers[STAGED_RANK] = index;
     layers[HEAD_RANK] = head;
     const { base, states } = resolve(head, frontiers);
+    const reviewedIndex = values.restoreUnstaged(base, index, head, worktree);
     for (const level of STORED_REVIEW_LEVELS) {
         layers[reviewLevelRank(level)] = isFullyStaged
             ? index
-            : values.isSame(index, base) ? states[level] : values.mergeOverIndex(base, index, states[level]);
+            : values.isSame(reviewedIndex, base) ? states[level] : values.mergeOverIndex(base, reviewedIndex, states[level]);
     }
     return layers;
 }

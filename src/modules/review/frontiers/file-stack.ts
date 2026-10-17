@@ -1,12 +1,15 @@
 import type { FileSnapshot } from '../git/content-loader';
 import { recordId } from '../model/file-generation';
 import { EMPTY_CONTENT_HASH, contentHash } from '../model/file-state';
-import { HASH_VALUES, SEGMENT_VALUES } from '../model/ladder-values';
-import { buildStack } from '../model/level-ladder';
+import { HASH_VALUES, SEGMENT_VALUES, Segments } from '../model/ladder-values';
+import { buildStack, frontiersFromLayers } from '../model/level-ladder';
 import { toSegments } from '../model/segment-codec';
-import { EmptyLayer, normalizeDisplayModes } from '../model/state-move-planner';
+import { EmptyLayer, StateLayers, normalizeDisplayModes } from '../model/state-move-planner';
+import { binaryCopyReferences } from '../store/record-codec';
 import { FileGeneration, FrontierKind, FrontierRecord, ScannedFileKind } from '../types';
-import { BlobContents, opaqueFrontiers, textFrontiersFromBlobs } from './frontier-encoding';
+import { BlobContents, EncodedRecord, encodeOpaque, encodeText, opaqueFrontiers, textFrontiersFromBlobs } from './frontier-encoding';
+
+export const MAX_BINARY_COPY_BYTES = 50 * 1024 * 1024;
 
 export interface FileStack {
     kind: FrontierKind;
@@ -63,4 +66,30 @@ export function buildFileStack(fileKind: ScannedFileKind, head: string, record: 
     );
     const modes = buildStack(snapshot.head.mode, snapshot.index.mode, snapshot.worktree.mode, frontiers.modes, isFullyStaged, HASH_VALUES);
     return { kind, snapshot, content, modes: normalizeDisplayModes(content, modes, snapshot.head.mode, isEmptyText), generation, isEmpty: isEmptyText };
+}
+
+export function sideBytes(snapshot: FileSnapshot, hash: string): Buffer | undefined {
+    for (const side of [snapshot.worktree, snapshot.index, snapshot.head]) {
+        if (side.content && contentHash(side.content) === hash) {
+            return side.content;
+        }
+    }
+    return undefined;
+}
+
+function binaryCopies(snapshot: FileSnapshot, hashes: readonly string[]): Buffer[] {
+    return Array.from(new Set(hashes))
+        .map(hash => sideBytes(snapshot, hash))
+        .filter((content): content is Buffer => content !== undefined && content.length > 0 && content.length <= MAX_BINARY_COPY_BYTES);
+}
+
+export function encodeStack(repoPath: string, head: string, stack: FileStack, layers: StateLayers): EncodedRecord {
+    const modes = frontiersFromLayers(stack.snapshot.head.mode, layers.modes, HASH_VALUES);
+    if (stack.kind === 'opaque') {
+        const content = frontiersFromLayers(contentHash(stack.snapshot.head.content), layers.content.map(layerHash), HASH_VALUES);
+        const encoded = encodeOpaque(repoPath, head, { content, modes });
+        return { record: encoded.record, blobs: encoded.record ? binaryCopies(stack.snapshot, binaryCopyReferences(encoded.record)) : [] };
+    }
+    const content = frontiersFromLayers<Segments>(toSegments(stack.snapshot.head.content), layers.content, SEGMENT_VALUES);
+    return encodeText(repoPath, head, { content, modes });
 }

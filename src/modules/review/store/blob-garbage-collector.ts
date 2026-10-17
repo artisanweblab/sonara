@@ -1,6 +1,6 @@
 import { ReviewLogger } from '../logging/review-logger';
 import { MoveJournal } from './move-journal';
-import { legacyBlobReferences, textBlobReferences } from './record-codec';
+import { keptBlobReferences, legacyBlobReferences } from './record-codec';
 import { ReviewBlobStore, isBlobName } from './review-blob-store';
 import { ReviewStateStore } from './review-state-store';
 import { StorageHealth } from './storage-health';
@@ -76,11 +76,11 @@ export class BlobGarbageCollector {
         const referenced = new Set<string>();
         for (const repoPath of await this.records.listStoredPaths()) {
             const active = await this.records.readActive(repoPath);
-            [...(active.record ? textBlobReferences(active.record) : []), ...legacyBlobReferences(active.legacy)].forEach(hash => referenced.add(hash));
+            [...(active.record ? keptBlobReferences(active.record) : []), ...legacyBlobReferences(active.legacy)].forEach(hash => referenced.add(hash));
         }
         for (const repoPath of await this.records.listDormantPaths()) {
             const dormant = await this.records.readDormant(repoPath);
-            (dormant.record ? textBlobReferences(dormant.record) : []).forEach(hash => referenced.add(hash));
+            (dormant.record ? keptBlobReferences(dormant.record) : []).forEach(hash => referenced.add(hash));
         }
         (await this.records.referencedByQuarantine()).forEach(hash => referenced.add(hash));
         (await this.journal.referencedHashes()).forEach(hash => referenced.add(hash));

@@ -1,21 +1,10 @@
-import { MISSING_MODE, contentHash } from '../model/file-state';
+import { EMPTY_CONTENT_HASH, MISSING_MODE } from '../model/file-state';
 import { levelHunks } from '../model/layer-stack';
 import { diffSegments, firstLineIndex, joinSegments, mapNewIndexToOld } from '../model/line-diff';
 import { FrontierRecord, LevelChange, LevelDocument, ReviewLevel, ScannedFile, reviewLevelRank } from '../types';
-import { FileStack, layerHash } from './file-stack';
+import { FileStack, layerHash, sideBytes } from './file-stack';
 import { FileStackBuilder } from './file-stack-builder';
 import { FileEvaluation, fileChangeId, gitAtoms, levelChanges, scanGeneration, stackAtoms } from './level-changes';
-
-function opaqueBytes(stack: FileStack, rank: number): Buffer | undefined {
-    const hash = layerHash(stack.content[rank]);
-    const { head, index, worktree } = stack.snapshot;
-    for (const side of [worktree, index, head]) {
-        if (side.content && contentHash(side.content) === hash) {
-            return side.content;
-        }
-    }
-    return undefined;
-}
 
 function describeOpaque(hash: string, mode: string): string {
     return mode === MISSING_MODE ? 'File is absent.\n' : `Binary content ${hash}\nMode ${mode}\n`;
@@ -59,8 +48,8 @@ export class FrontierEvaluator {
             return {
                 before: describeOpaque(layerHash(stack.content[rank + 1]), stack.modes[rank + 1]),
                 after: describeOpaque(layerHash(stack.content[rank]), stack.modes[rank]),
-                binaryBefore: opaqueBytes(stack, rank + 1),
-                binaryAfter: opaqueBytes(stack, rank),
+                binaryBefore: await this.opaqueBytes(stack, rank + 1),
+                binaryAfter: await this.opaqueBytes(stack, rank),
                 isBeforeMissing: stack.modes[rank + 1] === MISSING_MODE,
                 isAfterMissing: stack.modes[rank] === MISSING_MODE,
                 changes,
@@ -75,6 +64,14 @@ export class FrontierEvaluator {
             changes,
             generation: stack.generation,
         };
+    }
+
+    private async opaqueBytes(stack: FileStack, rank: number): Promise<Buffer | undefined> {
+        const hash = layerHash(stack.content[rank]);
+        if (hash === EMPTY_CONTENT_HASH) {
+            return Buffer.alloc(0);
+        }
+        return sideBytes(stack.snapshot, hash) ?? await this.builder.binaryCopy(hash);
     }
 
     async firstWorkingLine(file: ScannedFile, head: string, record: FrontierRecord | null, level: ReviewLevel): Promise<number> {

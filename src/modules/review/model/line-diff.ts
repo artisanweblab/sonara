@@ -1,6 +1,6 @@
 import { Hunk, RangeHunk } from '../types';
 
-const TRACE_BUDGET = 4_000_000;
+const TRACE_BUDGET = 25_000_000;
 
 export function splitSegments(content: string): string[] {
     const segments: string[] = [];
@@ -43,10 +43,14 @@ function snakeMatches(a: readonly string[], b: readonly string[]): Array<[number
     const m = b.length;
     const max = n + m;
     const offset = max + 1;
-    const maxD = Math.min(max, Math.floor(TRACE_BUDGET / (max + 1)));
     const v = new Int32Array(2 * max + 3);
     const trace: Int32Array[] = [];
-    for (let d = 0; d <= maxD; d++) {
+    let traceSize = 0;
+    for (let d = 0; d <= max; d++) {
+        traceSize += 2 * d + 3;
+        if (traceSize > TRACE_BUDGET) {
+            return null;
+        }
         trace.push(v.slice(offset - d - 1, offset + d + 2));
         for (let k = -d; k <= d; k += 2) {
             let x = k === -d || (k !== d && v[offset + k - 1] < v[offset + k + 1]) ? v[offset + k + 1] : v[offset + k - 1] + 1;

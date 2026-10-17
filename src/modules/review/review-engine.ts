@@ -69,6 +69,7 @@ export function createReviewEngine(options: ReviewEngineOptions): ReviewEngine {
     const recovery = new MoveRecovery(journal, store, reader, logger);
     const committer = new MoveCommitter(repository, store, blobs, journal, recovery, snapshots, gitState, indexGit, scope.projectPrefix, logger);
     const stashReader = new StashReader(reader, loader, gitState);
+    const stacks = new FileStackBuilder(loader, blobs);
     const frontierMover = new FrontierMover(
         snapshots,
         new SpecialFileMover(reader, loader, logger),
@@ -85,9 +86,9 @@ export function createReviewEngine(options: ReviewEngineOptions): ReviewEngine {
         gitState,
         loader,
         scanner: new ChangeScanner(reader, loader, gitState, scope.reviewRepoPath),
-        evaluator: new FrontierEvaluator(new FileStackBuilder(loader, blobs)),
+        evaluator: new FrontierEvaluator(stacks),
         bulkEvaluator: new BulkEvaluator(snapshots, blobs, pool),
-        synchronizer: new FrontierSynchronizer(loader, gitState, repository, new LegacyRecordMigrator(reader, loader, repository, blobs), stashReader, logger),
+        synchronizer: new FrontierSynchronizer(loader, gitState, repository, new LegacyRecordMigrator(reader, loader, repository, blobs), stashReader, stacks, logger),
         mover: new ReviewLevelMover(frontierMover, logger, options.getFile),
         repository,
         recovery,

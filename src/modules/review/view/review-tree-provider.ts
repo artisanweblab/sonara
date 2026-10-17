@@ -93,17 +93,17 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
         if (!key) {
             return;
         }
-        const apply = (target: ReviewNode, targetKey: string): void => {
-            this.expansion.set(targetKey, isExpanded);
+        const apply = (target: ReviewNode, targetKey: string, isTargetExpanded: boolean): void => {
+            this.expansion.set(targetKey, isTargetExpanded);
             this.revisions.set(targetKey, (this.revisions.get(targetKey) ?? 0) + 1);
             for (const child of this.getChildren(target)) {
                 const childKey = expansionKey(child);
                 if (childKey) {
-                    apply(child, childKey);
+                    apply(child, childKey, isExpanded);
                 }
             }
         };
-        apply(node, key);
+        apply(node, key, true);
         this.emitter.fire(undefined);
     }
 

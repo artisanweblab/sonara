@@ -43,6 +43,8 @@ function snapshotChanges(repository: Repository): Map<string, string> {
 export class RepositoryWatcher implements vscode.Disposable {
     private readonly emitter = new vscode.EventEmitter<RepositoryChange>();
     readonly onDidChange = this.emitter.event;
+    private readonly repositoryEmitter = new vscode.EventEmitter<void>();
+    readonly onDidOpenRepository = this.repositoryEmitter.event;
 
     private readonly disposables: vscode.Disposable[] = [];
     private readonly repositoryDisposables: vscode.Disposable[] = [];
@@ -187,6 +189,7 @@ export class RepositoryWatcher implements vscode.Disposable {
         this.lastHead = repository.state.HEAD?.commit;
         this.lastSnapshot = snapshotChanges(repository);
         this.repositoryDisposables.push(repository.state.onDidChange(() => this.onRepositoryState(repository)));
+        this.repositoryEmitter.fire();
     }
 
     private onRepositoryState(repository: Repository): void {
@@ -259,5 +262,6 @@ export class RepositoryWatcher implements vscode.Disposable {
         this.repositoryDisposables.forEach(d => d.dispose());
         this.disposables.forEach(d => d.dispose());
         this.emitter.dispose();
+        this.repositoryEmitter.dispose();
     }
 }

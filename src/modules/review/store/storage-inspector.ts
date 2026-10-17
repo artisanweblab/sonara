@@ -3,7 +3,7 @@ import * as path from 'path';
 import { mapLimit } from '../model/map-limit';
 import { MoveJournal } from './move-journal';
 import { RECORD_EXTENSION, UnreadableDirectory, listRecordFiles } from './record-files';
-import { blobReferenceLabel, decodeActive, decodeDormant, legacyBlobReferences, textBlobReferenceEntries } from './record-codec';
+import { binaryCopyReferences, blobReferenceLabel, decodeActive, decodeDormant, legacyBlobReferences, textBlobReferenceEntries } from './record-codec';
 import { RecordQuarantine } from './record-quarantine';
 import { ReviewBlobStore, isBlobName } from './review-blob-store';
 
@@ -34,7 +34,14 @@ interface RecordScan {
     count: number;
     unreadable: string[];
     references: DanglingReference[];
+    binaryCopies: string[];
     unreadableDirectories: UnreadableDirectory[];
+}
+
+interface RecordReferences {
+    repoPath: string;
+    references: DanglingReference[];
+    binaryCopies: string[];
 }
 
 export class StorageInspector {
@@ -55,7 +62,7 @@ export class StorageInspector {
         const present = new Set(listed.filter(isBlobName));
         const references = [...active.references, ...dormant.references];
         const protectedHashes = new Set([...(await this.quarantine.referencedHashes()), ...(await this.journal.referencedHashes())]);
-        const referenced = new Set([...references.map(reference => reference.hash), ...protectedHashes]);
+        const referenced = new Set([...references.map(reference => reference.hash), ...active.binaryCopies, ...dormant.binaryCopies, ...protectedHashes]);
         return {
             reviewRoot: this.reviewRoot,
             records: active.count,
@@ -75,7 +82,7 @@ export class StorageInspector {
     private async scan(root: 'files' | 'dormant', isDormant: boolean): Promise<RecordScan> {
         const directory = path.join(this.reviewRoot, root);
         const listing = await listRecordFiles(directory);
-        const scan: RecordScan = { count: 0, unreadable: [], references: [], unreadableDirectories: listing.unreadable };
+        const scan: RecordScan = { count: 0, unreadable: [], references: [], binaryCopies: [], unreadableDirectories: listing.unreadable };
         const results = await mapLimit(listing.repoPaths, READ_CONCURRENCY, repoPath => this.readRecord(directory, repoPath, isDormant));
         for (const result of results) {
             scan.count++;
@@ -83,6 +90,7 @@ export class StorageInspector {
                 scan.unreadable.push(`${result.repoPath}: ${result.reason}`);
             } else {
                 scan.references.push(...result.references);
+                scan.binaryCopies.push(...result.binaryCopies);
             }
         }
         return scan;
@@ -92,7 +100,7 @@ export class StorageInspector {
         directory: string,
         repoPath: string,
         isDormant: boolean,
-    ): Promise<{ repoPath: string; references: DanglingReference[] } | { repoPath: string; reason: string }> {
+    ): Promise<RecordReferences | { repoPath: string; reason: string }> {
         const file = path.join(directory, ...repoPath.split('/')) + RECORD_EXTENSION;
         let raw: unknown;
         try {
@@ -108,10 +116,10 @@ export class StorageInspector {
             return { repoPath, reason: `written by a newer Sonara (record version ${decoded.version})` };
         }
         if (decoded.status === 'legacy') {
-            return { repoPath, references: legacyBlobReferences(decoded.raw).map(hash => ({ repoPath, where: 'an earlier format', hash })) };
+            return { repoPath, references: legacyBlobReferences(decoded.raw).map(hash => ({ repoPath, where: 'an earlier format', hash })), binaryCopies: [] };
         }
         if (decoded.status !== 'record' && decoded.status !== 'dormant') {
-            return { repoPath, references: [] };
+            return { repoPath, references: [], binaryCopies: [] };
         }
         const where = isDormant ? 'the stashed copy of ' : '';
         return {
@@ -121,6 +129,7 @@ export class StorageInspector {
                 where: `${where}${blobReferenceLabel(reference.slot)}`,
                 hash: reference.hash,
             })),
+            binaryCopies: binaryCopyReferences(decoded.record),
         };
     }
 }

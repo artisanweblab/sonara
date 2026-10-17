@@ -1,5 +1,6 @@
 import { LadderValues } from './level-ladder';
 import { mergeKeepingOurs } from './three-way-merge';
+import { restoreUnstagedSegments, restoreUnstagedState } from './unstaged-hunks';
 
 export type Segments = readonly string[];
 
@@ -11,6 +12,7 @@ export const SEGMENT_VALUES: LadderValues<Segments> = {
     isSame: isSameSegments,
     mergeOverIndex: mergeKeepingOurs,
     mergeKeepingOurs,
+    restoreUnstaged: restoreUnstagedSegments,
 };
 
 function keepOurs(base: string, ours: string, theirs: string): string {
@@ -21,4 +23,5 @@ export const HASH_VALUES: LadderValues<string> = {
     isSame: (a, b) => a === b,
     mergeOverIndex: keepOurs,
     mergeKeepingOurs: keepOurs,
+    restoreUnstaged: restoreUnstagedState,
 };

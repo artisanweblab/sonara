@@ -20,4 +20,8 @@ export class FileStackBuilder {
         }
         return buildFileStack(file.kind, head, record, snapshot, blobs);
     }
+
+    async binaryCopy(hash: string): Promise<Buffer | undefined> {
+        return await this.blobs.exists(hash) ? await this.blobs.read(hash) : undefined;
+    }
 }

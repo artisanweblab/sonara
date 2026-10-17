@@ -67,6 +67,18 @@ function buildRecord(
     return record;
 }
 
+function keepingStagedAsVerified<T>(frontiers: LevelFrontiers<T>, isNothingReviewed: boolean): LevelFrontiers<T> {
+    return isNothingReviewed && frontiers.verified === null ? { ...frontiers, verified: frontiers.indexBase } : frontiers;
+}
+
+function rememberStaged<T>(frontiers: FileFrontiers<LevelFrontiers<T>>): FileFrontiers<LevelFrontiers<T>> {
+    const isNothingReviewed = isEmptyFrontiers(frontiers.content) && isEmptyFrontiers(frontiers.modes);
+    return {
+        content: keepingStagedAsVerified(frontiers.content, isNothingReviewed),
+        modes: keepingStagedAsVerified(frontiers.modes, isNothingReviewed),
+    };
+}
+
 export function textFrontiersFromBlobs(record: FrontierRecord | null, blobs: BlobContents): FileFrontiers<LevelFrontiers<Segments>> {
     const content = emptyFrontiers<Segments>();
     if (record?.kind !== 'text') {
@@ -101,7 +113,8 @@ export function opaqueFrontiers(record: FrontierRecord | null): FileFrontiers<Le
     return { content, modes: frontierModes(record) };
 }
 
-export function encodeText(repoPath: string, head: string, frontiers: FileFrontiers<LevelFrontiers<Segments>>): EncodedRecord {
+export function encodeText(repoPath: string, head: string, normalized: FileFrontiers<LevelFrontiers<Segments>>): EncodedRecord {
+    const frontiers = rememberStaged(normalized);
     if (isEmptyFrontiers(frontiers.content) && isEmptyFrontiers(frontiers.modes)) {
         return { record: null, blobs: [] };
     }
@@ -119,7 +132,8 @@ export function encodeText(repoPath: string, head: string, frontiers: FileFronti
     return { record, blobs: record ? blobs : [] };
 }
 
-export function encodeOpaque(repoPath: string, head: string, frontiers: FileFrontiers<LevelFrontiers<string>>): EncodedRecord {
+export function encodeOpaque(repoPath: string, head: string, normalized: FileFrontiers<LevelFrontiers<string>>): EncodedRecord {
+    const frontiers = rememberStaged(normalized);
     if (isEmptyFrontiers(frontiers.content) && isEmptyFrontiers(frontiers.modes)) {
         return { record: null, blobs: [] };
     }

@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { MAX_BINARY_COPY_BYTES } from '../frontiers/file-stack';
 import { LEVEL_LABELS, LevelDocument, LevelDocumentSideName, ReviewLevel } from '../types';
 
 function folderName(repoPath: string): string {
@@ -18,9 +19,14 @@ export class BinaryLevelPreview {
         const before = document.isBeforeMissing ? null : document.binaryBefore;
         const after = document.isAfterMissing ? null : document.binaryAfter;
         if (before === undefined || after === undefined) {
-            await vscode.window.showInformationMessage(
-                `Sonara Review: ${name} is a binary file, and the version accepted on a level is kept by its fingerprint only. Move the file back to New to see it again.`,
-            );
+            const kept = before === undefined ? after : before;
+            const keptSide: LevelDocumentSideName = before === undefined ? 'after' : 'before';
+            const lost = before === undefined && after === undefined ? 'neither version was' : `the ${before === undefined ? 'earlier' : 'later'} version was not`;
+            const reason = `accepted before Sonara kept copies of binary files, or larger than ${MAX_BINARY_COPY_BYTES / 1024 / 1024} MB`;
+            void vscode.window.showInformationMessage(`Sonara Review: on the ${LEVEL_LABELS[level]} level ${lost} kept for ${name} (${reason})${kept ? `, only the ${keptSide === 'after' ? 'later' : 'earlier'} version is shown` : ''}.`);
+            if (kept) {
+                await vscode.commands.executeCommand('vscode.open', await this.write(repoPath, level, keptSide, name, kept), { preview: true });
+            }
             return;
         }
         if (!before && !after) {
