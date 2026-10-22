@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { TreeExpansion } from '../../../shared/tree-expansion';
 import { ReviewServiceHolder } from '../review-service-holder';
 import { LEVEL_LABELS, REVIEW_LEVELS_TOP_DOWN, ReviewLevel } from '../types';
 import { FolderNode, LevelFileEntry, LevelNode, ReviewNode } from './review-node';
@@ -61,8 +62,7 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
     private readonly emitter = new vscode.EventEmitter<ReviewNode | undefined>();
     readonly onDidChangeTreeData = this.emitter.event;
     private readonly disposables: vscode.Disposable[] = [];
-    private readonly expansion = new Map<string, boolean>();
-    private readonly revisions = new Map<string, number>();
+    private readonly expansion = new TreeExpansion<ReviewNode>(expansionKey, node => this.getChildren(node));
 
     constructor(private readonly holder: ReviewServiceHolder) {
         this.disposables.push(
@@ -82,28 +82,11 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
     }
 
     rememberExpanded(node: ReviewNode, isExpanded: boolean): void {
-        const key = expansionKey(node);
-        if (key) {
-            this.expansion.set(key, isExpanded);
-        }
+        this.expansion.remember(node, isExpanded);
     }
 
     setSubtreeExpanded(node: ReviewNode, isExpanded: boolean): void {
-        const key = expansionKey(node);
-        if (!key) {
-            return;
-        }
-        const apply = (target: ReviewNode, targetKey: string, isTargetExpanded: boolean): void => {
-            this.expansion.set(targetKey, isTargetExpanded);
-            this.revisions.set(targetKey, (this.revisions.get(targetKey) ?? 0) + 1);
-            for (const child of this.getChildren(target)) {
-                const childKey = expansionKey(child);
-                if (childKey) {
-                    apply(child, childKey, isExpanded);
-                }
-            }
-        };
-        apply(node, key, true);
+        this.expansion.setSubtree(node, isExpanded);
         this.emitter.fire(undefined);
     }
 
@@ -131,12 +114,12 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
                 return this.levelItem(node);
             case 'folder': {
                 const key = folderKey(node.level, node.displayPath);
-                const isExpanded = this.expansion.get(key) ?? node.depth <= EXPANDED_FOLDER_DEPTH;
+                const isExpanded = this.expansion.isExpanded(key, node.depth <= EXPANDED_FOLDER_DEPTH);
                 const state = isExpanded
                     ? vscode.TreeItemCollapsibleState.Expanded
                     : vscode.TreeItemCollapsibleState.Collapsed;
                 const item = new vscode.TreeItem(node.label, state);
-                item.id = `folder/${key}#${this.revisions.get(key) ?? 0}`;
+                item.id = `folder/${this.expansion.itemId(key)}`;
                 item.iconPath = vscode.ThemeIcon.Folder;
                 item.resourceUri = treeItemUri(this.absoluteDisplayPath(node.displayPath), null);
                 const summary = summarizeLevel(collectStates(node));
@@ -191,12 +174,12 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
         const level = node.level;
         const states = collectStates(node);
         const summary = summarizeLevel(states);
-        const isExpanded = this.expansion.get(`level/${level}`) ?? level === 'new';
+        const isExpanded = this.expansion.isExpanded(`level/${level}`, level === 'new');
         const state = states.length === 0
             ? vscode.TreeItemCollapsibleState.None
             : isExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
         const item = new vscode.TreeItem(LEVEL_LABELS[level], state);
-        item.id = `level/${level}#${this.revisions.get(`level/${level}`) ?? 0}`;
+        item.id = this.expansion.itemId(`level/${level}`);
         item.description = describeLevel(summary);
         item.tooltip = levelTooltip(summary);
         item.contextValue = `reviewLevel.${level}`;
