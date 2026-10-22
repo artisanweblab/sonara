@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { SonaraProject } from '../../shared/sonara-project';
 import { CodeMapScanner, FileStats } from './code-map-scanner';
 import { NotGitRepositoryError } from './git-files';
 
@@ -24,12 +25,12 @@ export class CodeMapSession implements vscode.Disposable {
     private isGitWatched = false;
     private isDisposed = false;
 
-    constructor(readonly folder: vscode.WorkspaceFolder) {
+    constructor(readonly folder: SonaraProject) {
         this.scanner = new CodeMapScanner(folder.uri.fsPath);
     }
 
     start(): void {
-        const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(this.folder, '**/*'));
+        const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(this.folder.uri, '**/*'));
         const onUri = (uri: vscode.Uri): void => {
             if (!this.isGitWatched || !isInsideGitFolder(this.folder.uri.fsPath, uri.fsPath)) {
                 this.requestScan();

@@ -8,14 +8,21 @@ export interface LevelFileEntry {
     status: string;
 }
 
+export interface RepositoryNode {
+    type: 'repository';
+    project: string;
+}
+
 export interface LevelNode {
     type: 'level';
+    project: string;
     level: ReviewLevel;
     entries: LevelFileEntry[];
 }
 
 export interface FolderNode {
     type: 'folder';
+    project: string;
     level: ReviewLevel;
     displayPath: string;
     label: string;
@@ -25,6 +32,7 @@ export interface FolderNode {
 
 export interface FileNode {
     type: 'file';
+    project: string;
     level: ReviewLevel;
     path: string;
     displayPath: string;
@@ -33,4 +41,6 @@ export interface FileNode {
     status: string;
 }
 
-export type ReviewNode = LevelNode | FolderNode | FileNode;
+export type LevelContentNode = LevelNode | FolderNode | FileNode;
+
+export type ReviewNode = RepositoryNode | LevelContentNode;

@@ -1,9 +1,10 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { TreeExpansion } from '../../../shared/tree-expansion';
-import { ReviewServiceHolder } from '../review-service-holder';
-import { LEVEL_LABELS, REVIEW_LEVELS_TOP_DOWN, ReviewLevel } from '../types';
-import { FolderNode, LevelFileEntry, LevelNode, ReviewNode } from './review-node';
+import { ReviewService } from '../review-service';
+import { ReviewServices } from '../review-services';
+import { LEVEL_LABELS, REVIEW_LEVELS_TOP_DOWN, ReviewAtomState, ReviewLevel } from '../types';
+import { LevelContentNode, LevelFileEntry, LevelNode, RepositoryNode, ReviewNode } from './review-node';
 import { LevelSelection } from '../review-level-mover';
 import { treeItemUri } from './review-status-decorations';
 import { TreeLayout, buildLevelChildren, collectFiles, LevelSummary, collectStates, summarizeLevel } from './review-tree-builder';
@@ -12,15 +13,34 @@ export const OPEN_LEVEL_DIFF_COMMAND = 'sonara.review.openLevelDiff';
 
 const EXPANDED_FOLDER_DEPTH = 1;
 
-function folderKey(level: ReviewLevel, displayPath: string): string {
-    return `${level}/${displayPath}`;
+export interface ProjectFile {
+    project: string;
+    path: string;
+}
+
+function folderKey(project: string, level: ReviewLevel, displayPath: string): string {
+    return `${project}::${level}/${displayPath}`;
+}
+
+function levelKey(project: string, level: ReviewLevel): string {
+    return `${project}::level/${level}`;
+}
+
+function repositoryKey(project: string): string {
+    return `${project}::repository`;
 }
 
 function expansionKey(node: ReviewNode): string | null {
-    if (node.type === 'level') {
-        return `level/${node.level}`;
+    switch (node.type) {
+        case 'repository':
+            return repositoryKey(node.project);
+        case 'level':
+            return levelKey(node.project, node.level);
+        case 'folder':
+            return folderKey(node.project, node.level, node.displayPath);
+        case 'file':
+            return null;
     }
-    return node.type === 'folder' ? folderKey(node.level, node.displayPath) : null;
 }
 
 const FILE_STATUSES: readonly { status: string; letter: string; word: string }[] = [
@@ -64,9 +84,9 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
     private readonly disposables: vscode.Disposable[] = [];
     private readonly expansion = new TreeExpansion<ReviewNode>(expansionKey, node => this.getChildren(node));
 
-    constructor(private readonly holder: ReviewServiceHolder) {
+    constructor(private readonly services: ReviewServices) {
         this.disposables.push(
-            holder.onDidChange(() => this.refresh()),
+            services.onDidChange(() => this.refresh()),
             vscode.workspace.onDidChangeConfiguration(event => {
                 if (event.affectsConfiguration('sonara.review.viewMode') || event.affectsConfiguration('sonara.review.compactFolders')) {
                     this.publishViewMode();
@@ -91,16 +111,20 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
     }
 
     getChildren(node?: ReviewNode): ReviewNode[] {
-        const service = this.holder.get();
-        if (!service || !service.isActive()) {
-            return [];
-        }
         if (!node) {
-            return REVIEW_LEVELS_TOP_DOWN.map(level => ({ type: 'level', level, entries: this.entriesFor(level) }));
+            const services = this.services.all();
+            if (services.length === 1) {
+                return this.levelsOf(services[0]);
+            }
+            return services.map(service => ({ type: 'repository', project: service.project.uri.fsPath }));
         }
         switch (node.type) {
+            case 'repository': {
+                const service = this.services.get(node.project);
+                return service ? this.levelsOf(service) : [];
+            }
             case 'level':
-                return buildLevelChildren(node.level, node.entries, this.currentLayout(), this.isCompactFolders());
+                return buildLevelChildren(node.project, node.level, node.entries, this.currentLayout(), this.isCompactFolders());
             case 'folder':
                 return node.children;
             case 'file':
@@ -110,10 +134,12 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
 
     getTreeItem(node: ReviewNode): vscode.TreeItem {
         switch (node.type) {
+            case 'repository':
+                return this.repositoryItem(node);
             case 'level':
                 return this.levelItem(node);
             case 'folder': {
-                const key = folderKey(node.level, node.displayPath);
+                const key = folderKey(node.project, node.level, node.displayPath);
                 const isExpanded = this.expansion.isExpanded(key, node.depth <= EXPANDED_FOLDER_DEPTH);
                 const state = isExpanded
                     ? vscode.TreeItemCollapsibleState.Expanded
@@ -121,7 +147,7 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
                 const item = new vscode.TreeItem(node.label, state);
                 item.id = `folder/${this.expansion.itemId(key)}`;
                 item.iconPath = vscode.ThemeIcon.Folder;
-                item.resourceUri = treeItemUri(this.absoluteDisplayPath(node.displayPath), null);
+                item.resourceUri = treeItemUri(this.absoluteDisplayPath(node.project, node.displayPath), null);
                 const summary = summarizeLevel(collectStates(node));
                 item.description = `files: ${summary.fileCount} · ${describeLines(summary)}`;
                 item.tooltip = `${node.displayPath}\n${levelTooltip(summary)}`;
@@ -130,9 +156,9 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
             }
             case 'file': {
                 const item = new vscode.TreeItem(path.posix.basename(node.displayPath), vscode.TreeItemCollapsibleState.None);
-                item.id = `file/${node.level}/${node.path}`;
+                item.id = `file/${node.project}/${node.level}/${node.path}`;
                 item.iconPath = vscode.ThemeIcon.File;
-                item.resourceUri = treeItemUri(this.absoluteDisplayPath(node.displayPath), node.status);
+                item.resourceUri = treeItemUri(this.absoluteDisplayPath(node.project, node.displayPath), node.status);
                 const directory = path.posix.dirname(node.displayPath);
                 const location = this.currentLayout() === 'list' && directory !== '.' ? directory : '';
                 const summary = summarizeLevel(node.states);
@@ -143,58 +169,89 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
                     ? `${node.displayPath}\n${countOf(summary.addedLines, 'line')} added, ${countOf(summary.removedLines, 'line')} removed`
                     : node.displayPath;
                 item.contextValue = `reviewFile.${node.level}`;
-                item.command = { command: OPEN_LEVEL_DIFF_COMMAND, title: 'Open Level Changes', arguments: [node.path, node.level] };
+                item.command = { command: OPEN_LEVEL_DIFF_COMMAND, title: 'Open Level Changes', arguments: [node.project, node.path, node.level] };
                 return item;
             }
         }
     }
 
-    orderedFiles(level: ReviewLevel): string[] {
-        const nodes = buildLevelChildren(level, this.entriesFor(level), this.currentLayout(), this.isCompactFolders());
-        const paths: string[] = [];
+    orderedFiles(level: ReviewLevel): ProjectFile[] {
+        const files: ProjectFile[] = [];
         const visit = (list: readonly ReviewNode[]): void => {
             for (const node of list) {
                 if (node.type === 'file') {
-                    paths.push(node.path);
+                    files.push({ project: node.project, path: node.path });
                 } else if (node.type === 'folder') {
                     visit(node.children);
                 }
             }
         };
-        visit(nodes);
-        return paths;
+        for (const service of this.services.all()) {
+            const project = service.project.uri.fsPath;
+            visit(buildLevelChildren(project, level, this.entriesFor(service, level), this.currentLayout(), this.isCompactFolders()));
+        }
+        return files;
     }
 
-    selectionsOf(node: ReviewNode): LevelSelection[] {
+    selectionsOf(node: LevelContentNode): LevelSelection[] {
         const files = node.type === 'level' ? node.entries.map(entry => ({ ...entry, level: node.level })) : collectFiles(node);
         return files.map(file => ({ repoPath: file.path, level: file.level, generation: file.generation }));
     }
 
+    private levelsOf(service: ReviewService): LevelNode[] {
+        if (!service.isActive()) {
+            return [];
+        }
+        const project = service.project.uri.fsPath;
+        return REVIEW_LEVELS_TOP_DOWN.map(level => ({ type: 'level', project, level, entries: this.entriesFor(service, level) }));
+    }
+
+    private repositoryItem(node: RepositoryNode): vscode.TreeItem {
+        const service = this.services.get(node.project);
+        const key = repositoryKey(node.project);
+        const isActive = service?.isActive() ?? false;
+        const state = isActive
+            ? this.expansion.isExpanded(key, true) ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed
+            : vscode.TreeItemCollapsibleState.None;
+        const item = new vscode.TreeItem(service?.project.name ?? path.basename(node.project), state);
+        item.id = this.expansion.itemId(key);
+        item.iconPath = new vscode.ThemeIcon('repo');
+        if (service && isActive) {
+            const states = service.getFiles().flatMap(file => file.atoms);
+            const summary = summarizeLevel(states);
+            const newCount = summarizeLevel(states.filter(state => state.level === 'new')).fileCount;
+            item.description = `new: ${newCount} · ${describeLevel(summary)}`;
+            item.tooltip = `${node.project}\n${levelTooltip(summary)}`;
+        } else {
+            item.description = service?.getIdleReason() || undefined;
+            item.tooltip = node.project;
+        }
+        item.contextValue = 'reviewRepository';
+        return item;
+    }
+
     private levelItem(node: LevelNode): vscode.TreeItem {
         const level = node.level;
+        const key = levelKey(node.project, level);
         const states = collectStates(node);
         const summary = summarizeLevel(states);
-        const isExpanded = this.expansion.isExpanded(`level/${level}`, level === 'new');
+        const isExpanded = this.expansion.isExpanded(key, level === 'new');
         const state = states.length === 0
             ? vscode.TreeItemCollapsibleState.None
             : isExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
         const item = new vscode.TreeItem(LEVEL_LABELS[level], state);
-        item.id = this.expansion.itemId(`level/${level}`);
+        item.id = this.expansion.itemId(key);
         item.description = describeLevel(summary);
         item.tooltip = levelTooltip(summary);
         item.contextValue = `reviewLevel.${level}`;
         return item;
     }
 
-    private entriesFor(level: ReviewLevel): LevelFileEntry[] {
-        const service = this.holder.get();
-        if (!service) {
-            return [];
-        }
+    private entriesFor(service: ReviewService, level: ReviewLevel): LevelFileEntry[] {
         const prefix = service.getProjectPrefix();
         const entries: LevelFileEntry[] = [];
         for (const file of service.getFiles()) {
-            const states = file.atoms.filter(state => state.level === level);
+            const states: ReviewAtomState[] = file.atoms.filter(state => state.level === level);
             if (states.length === 0) {
                 continue;
             }
@@ -216,8 +273,8 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
         void vscode.commands.executeCommand('setContext', 'sonara.review.viewMode', this.currentLayout());
     }
 
-    absoluteDisplayPath(displayPath: string): string {
-        const service = this.holder.get();
+    absoluteDisplayPath(project: string, displayPath: string): string {
+        const service = this.services.get(project);
         if (!service) {
             return displayPath;
         }

@@ -1,72 +1,119 @@
 import * as vscode from 'vscode';
+import { SonaraProject } from '../../shared/sonara-project';
 import { describeFile, describeTotals } from './code-map-format';
-import { FileStats } from './code-map-scanner';
+import { CodeMapState } from './code-map-session';
 import { TreeExpansion } from '../../shared/tree-expansion';
-import { CodeMapFolder, CodeMapNode, CodeMapSort, buildCodeMap } from './code-map-tree';
+import { CodeMapFolder, CodeMapNode, CodeMapSort, CodeMapTotals, buildCodeMap, emptyTotals } from './code-map-tree';
 
-function folderKey(folderPath: string): string {
-    return `folder:${folderPath}`;
+export interface CodeMapRepository {
+    type: 'repository';
+    project: string;
 }
 
-function expansionKey(node: CodeMapNode): string | null {
-    return node.type === 'folder' ? folderKey(node.path) : null;
+export type CodeMapItem = CodeMapRepository | CodeMapNode;
+
+interface ProjectMap {
+    project: SonaraProject;
+    state: CodeMapState | undefined;
+    root: CodeMapFolder | undefined;
 }
 
-export class CodeMapProvider implements vscode.TreeDataProvider<CodeMapNode>, vscode.Disposable {
-    private readonly emitter = new vscode.EventEmitter<CodeMapNode | undefined>();
+function expansionKey(node: CodeMapItem): string | null {
+    if (node.type === 'repository') {
+        return `${node.project}::repository`;
+    }
+    return node.type === 'folder' ? `${node.project}::folder:${node.path}` : null;
+}
+
+export class CodeMapProvider implements vscode.TreeDataProvider<CodeMapItem>, vscode.Disposable {
+    private readonly emitter = new vscode.EventEmitter<CodeMapItem | undefined>();
     readonly onDidChangeTreeData = this.emitter.event;
 
-    private readonly expansion = new TreeExpansion<CodeMapNode>(expansionKey, node => this.getChildren(node));
-    private root: CodeMapFolder | undefined;
-    private files: readonly FileStats[] = [];
-    private folderUri: vscode.Uri | undefined;
+    private readonly expansion = new TreeExpansion<CodeMapItem>(expansionKey, node => this.getChildren(node));
+    private maps: ProjectMap[] = [];
 
     constructor(private sort: CodeMapSort) {}
 
-    rememberExpanded(node: CodeMapNode, isExpanded: boolean): void {
+    rememberExpanded(node: CodeMapItem, isExpanded: boolean): void {
         this.expansion.remember(node, isExpanded);
     }
 
-    setSubtreeExpanded(node: CodeMapNode, isExpanded: boolean): void {
+    setSubtreeExpanded(node: CodeMapItem, isExpanded: boolean): void {
         this.expansion.setSubtree(node, isExpanded);
         this.emitter.fire(undefined);
     }
 
-    uriOf(node: CodeMapNode): vscode.Uri | undefined {
-        return this.folderUri ? vscode.Uri.joinPath(this.folderUri, node.path) : undefined;
+    uriOf(node: CodeMapItem): vscode.Uri | undefined {
+        const map = this.mapOf(node.project);
+        if (!map) {
+            return undefined;
+        }
+        return node.type === 'repository' ? map.project.uri : vscode.Uri.joinPath(map.project.uri, node.path);
     }
 
-    show(folderUri: vscode.Uri, files: readonly FileStats[]): CodeMapFolder {
-        this.folderUri = folderUri;
-        this.files = files;
-        return this.rebuild();
+    setProjects(projects: readonly SonaraProject[]): void {
+        this.maps = projects.map(project => this.mapOf(project.uri.fsPath) ?? { project, state: undefined, root: undefined });
+        this.emitter.fire(undefined);
     }
 
-    clear(): void {
-        this.folderUri = undefined;
-        this.files = [];
-        this.root = undefined;
+    showState(project: string, state: CodeMapState): void {
+        const map = this.mapOf(project);
+        if (!map) {
+            return;
+        }
+        map.state = state;
+        map.root = state.kind === 'files' ? buildCodeMap(project, state.files, this.sort) : undefined;
         this.emitter.fire(undefined);
     }
 
     setSort(sort: CodeMapSort): void {
         this.sort = sort;
-        if (this.folderUri) {
-            this.rebuild();
+        for (const map of this.maps) {
+            if (map.state?.kind === 'files') {
+                map.root = buildCodeMap(map.project.uri.fsPath, map.state.files, sort);
+            }
         }
+        this.emitter.fire(undefined);
     }
 
-    getChildren(node?: CodeMapNode): CodeMapNode[] {
+    projectStates(): ReadonlyArray<{ project: SonaraProject; state: CodeMapState | undefined }> {
+        return this.maps;
+    }
+
+    totals(): CodeMapTotals {
+        const totals = emptyTotals();
+        for (const root of this.maps.map(map => map.root)) {
+            if (root) {
+                totals.files += root.totals.files;
+                totals.lines += root.totals.lines;
+                totals.bytes += root.totals.bytes;
+                totals.added += root.totals.added;
+                totals.removed += root.totals.removed;
+            }
+        }
+        return totals;
+    }
+
+    getChildren(node?: CodeMapItem): CodeMapItem[] {
         if (!node) {
-            return this.root?.children ?? [];
+            if (this.maps.length === 1) {
+                return this.maps[0].root?.children ?? [];
+            }
+            return this.maps.map(map => ({ type: 'repository', project: map.project.uri.fsPath }));
+        }
+        if (node.type === 'repository') {
+            return this.mapOf(node.project)?.root?.children ?? [];
         }
         return node.type === 'folder' ? node.children : [];
     }
 
-    getTreeItem(node: CodeMapNode): vscode.TreeItem {
+    getTreeItem(node: CodeMapItem): vscode.TreeItem {
+        if (node.type === 'repository') {
+            return this.repositoryItem(node);
+        }
         const resourceUri = this.uriOf(node);
         if (node.type === 'folder') {
-            const key = folderKey(node.path);
+            const key = `${node.project}::folder:${node.path}`;
             const isExpanded = this.expansion.isExpanded(key, false);
             const item = new vscode.TreeItem(node.name, isExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
             item.id = this.expansion.itemId(key);
@@ -78,7 +125,7 @@ export class CodeMapProvider implements vscode.TreeDataProvider<CodeMapNode>, vs
             return item;
         }
         const item = new vscode.TreeItem(node.name, vscode.TreeItemCollapsibleState.None);
-        item.id = `file:${node.path}`;
+        item.id = `file:${node.project}:${node.path}`;
         item.contextValue = 'codeMapFile';
         item.resourceUri = resourceUri;
         item.iconPath = vscode.ThemeIcon.File;
@@ -92,9 +139,30 @@ export class CodeMapProvider implements vscode.TreeDataProvider<CodeMapNode>, vs
         this.emitter.dispose();
     }
 
-    private rebuild(): CodeMapFolder {
-        this.root = buildCodeMap(this.files, this.sort);
-        this.emitter.fire(undefined);
-        return this.root;
+    private repositoryItem(node: CodeMapRepository): vscode.TreeItem {
+        const map = this.mapOf(node.project);
+        const key = `${node.project}::repository`;
+        const root = map?.root;
+        const state = root && root.children.length > 0
+            ? this.expansion.isExpanded(key, true) ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed
+            : vscode.TreeItemCollapsibleState.None;
+        const item = new vscode.TreeItem(map?.project.name ?? node.project, state);
+        item.id = this.expansion.itemId(key);
+        item.contextValue = 'codeMapRepository';
+        item.resourceUri = map?.project.uri;
+        item.iconPath = new vscode.ThemeIcon('repo');
+        if (map?.state?.kind === 'problem') {
+            item.description = map.state.message;
+        } else if (root) {
+            item.description = describeTotals(root.totals);
+        } else {
+            item.description = 'counting...';
+        }
+        item.tooltip = `${node.project}\n${item.description}`;
+        return item;
+    }
+
+    private mapOf(project: string): ProjectMap | undefined {
+        return this.maps.find(map => map.project.uri.fsPath === project);
     }
 }

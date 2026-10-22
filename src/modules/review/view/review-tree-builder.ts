@@ -44,12 +44,13 @@ function assignDepth(nodes: readonly ReviewNode[], depth: number): void {
 }
 
 export function buildLevelChildren(
+    project: string,
     level: ReviewLevel,
     entries: readonly LevelFileEntry[],
     layout: TreeLayout,
     compact: boolean,
 ): ReviewNode[] {
-    const files: FileNode[] = entries.map(entry => ({ type: 'file', level, ...entry }));
+    const files: FileNode[] = entries.map(entry => ({ type: 'file', project, level, ...entry }));
     if (layout === 'list') {
         return files.sort((a, b) => a.displayPath.localeCompare(b.displayPath));
     }
@@ -63,7 +64,7 @@ export function buildLevelChildren(
             folderPath = folderPath ? `${folderPath}/${segment}` : segment;
             let folder = folders.get(folderPath);
             if (!folder) {
-                folder = { type: 'folder', level, displayPath: folderPath, label: segment, depth: 1, children: [] };
+                folder = { type: 'folder', project, level, displayPath: folderPath, label: segment, depth: 1, children: [] };
                 folders.set(folderPath, folder);
                 siblings.push(folder);
             }
@@ -83,6 +84,7 @@ export function collectFiles(node: ReviewNode): FileNode[] {
         case 'folder':
             return node.children.flatMap(child => collectFiles(child));
         case 'level':
+        case 'repository':
             return [];
     }
 }
@@ -95,6 +97,8 @@ export function collectStates(node: ReviewNode): ReviewAtomState[] {
             return node.children.flatMap(child => collectStates(child));
         case 'level':
             return node.entries.flatMap(entry => entry.states);
+        case 'repository':
+            return [];
     }
 }
 

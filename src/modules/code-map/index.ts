@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
-import { ActiveProject } from '../../shared/active-project';
+import { ProjectCatalog } from '../../shared/project-catalog';
 import { PathTarget, copyPaths, distinctTargets, moveToTrash, revealInOS, selectedNodes } from '../../shared/file-actions';
 import { describeTotals } from './code-map-format';
-import { CodeMapProvider } from './code-map-provider';
-import { CodeMapSession, CodeMapState } from './code-map-session';
-import { CodeMapNode, CodeMapSort } from './code-map-tree';
+import { CodeMapItem, CodeMapProvider } from './code-map-provider';
+import { CodeMapSession } from './code-map-session';
+import { CodeMapSort } from './code-map-tree';
 
 const VIEW_ID = 'sonara.codeMap';
 const SORT_CONTEXT = 'sonara.codeMap.sortBy';
@@ -13,50 +13,70 @@ function currentSort(): CodeMapSort {
     return vscode.workspace.getConfiguration('sonara.codeMap').get<string>('sortBy') === 'name' ? 'name' : 'lines';
 }
 
-export function registerCodeMapModule(context: vscode.ExtensionContext, activeProject: ActiveProject): void {
+export function registerCodeMapModule(context: vscode.ExtensionContext, catalog: ProjectCatalog): void {
     const provider = new CodeMapProvider(currentSort());
     const treeView = vscode.window.createTreeView(VIEW_ID, { treeDataProvider: provider, showCollapseAll: true, canSelectMany: true });
-    let session: CodeMapSession | undefined;
+    const sessions = new Map<string, CodeMapSession>();
+    let isStarted = false;
 
-    const targetsOf = (node: CodeMapNode | undefined, selection: readonly CodeMapNode[] | undefined): PathTarget[] =>
-        distinctTargets(selectedNodes(node, selection).flatMap(current => {
+    const targetsOf = (nodes: readonly CodeMapItem[]): PathTarget[] =>
+        distinctTargets(nodes.flatMap(current => {
             const uri = provider.uriOf(current);
-            return uri ? [{ uri, isFolder: current.type === 'folder' }] : [];
+            return uri ? [{ uri, isFolder: current.type !== 'file' }] : [];
         }));
 
-    const showState = (state: CodeMapState): void => {
-        if (!session) {
-            return;
-        }
-        if (state.kind === 'problem') {
-            provider.clear();
+    const updateHeader = (): void => {
+        const states = provider.projectStates();
+        if (states.length === 0) {
             treeView.description = undefined;
-            treeView.message = state.message;
+            treeView.message = `Sonara Code Map needs a git repository: ${catalog.describeMissingGit()}.`;
             return;
         }
-        const root = provider.show(session.folder.uri, state.files);
-        treeView.description = describeTotals(root.totals);
-        treeView.message = state.files.length === 0 ? 'No files under git in this project yet.' : undefined;
+        const [single] = states;
+        if (states.length === 1 && single.state?.kind === 'problem') {
+            treeView.description = undefined;
+            treeView.message = single.state.message;
+            return;
+        }
+        const totals = provider.totals();
+        treeView.description = describeTotals(totals);
+        treeView.message = states.length === 1 && single.state?.kind === 'files' && single.state.files.length === 0
+            ? 'No files under git in this project yet.'
+            : undefined;
     };
 
-    const startSession = (): void => {
-        session?.dispose();
-        session = undefined;
-        const folder = activeProject.get();
-        if (!folder) {
-            provider.clear();
-            treeView.description = undefined;
-            treeView.message = 'Open a project folder to see its Code Map.';
+    const syncSessions = (): void => {
+        if (!isStarted) {
             return;
         }
-        session = new CodeMapSession(folder);
-        session.onDidChange(showState);
-        session.start();
+        const projects = catalog.gitProjects();
+        const wanted = new Set(projects.map(project => project.uri.fsPath));
+        for (const [key, session] of sessions) {
+            if (!wanted.has(key)) {
+                session.dispose();
+                sessions.delete(key);
+            }
+        }
+        provider.setProjects(projects);
+        for (const project of projects) {
+            const key = project.uri.fsPath;
+            if (!sessions.has(key)) {
+                const session = new CodeMapSession(project);
+                sessions.set(key, session);
+                session.onDidChange(state => {
+                    provider.showState(key, state);
+                    updateHeader();
+                });
+                session.start();
+            }
+        }
+        updateHeader();
     };
 
     const startWhenVisible = (): void => {
-        if (treeView.visible && !session) {
-            startSession();
+        if (treeView.visible && !isStarted) {
+            isStarted = true;
+            syncSessions();
         }
     };
 
@@ -68,15 +88,11 @@ export function registerCodeMapModule(context: vscode.ExtensionContext, activePr
     context.subscriptions.push(
         provider,
         treeView,
-        new vscode.Disposable(() => session?.dispose()),
+        new vscode.Disposable(() => sessions.forEach(session => session.dispose())),
         treeView.onDidChangeVisibility(startWhenVisible),
         treeView.onDidExpandElement(event => provider.rememberExpanded(event.element, true)),
         treeView.onDidCollapseElement(event => provider.rememberExpanded(event.element, false)),
-        activeProject.onDidChange(() => {
-            if (session || treeView.visible) {
-                startSession();
-            }
-        }),
+        catalog.onDidChange(syncSessions),
         vscode.workspace.onDidChangeConfiguration(event => {
             if (event.affectsConfiguration('sonara.codeMap.sortBy')) {
                 const sort = currentSort();
@@ -86,19 +102,26 @@ export function registerCodeMapModule(context: vscode.ExtensionContext, activePr
         }),
         vscode.commands.registerCommand('sonara.codeMap.sortByName', () => setSort('name')),
         vscode.commands.registerCommand('sonara.codeMap.sortByLines', () => setSort('lines')),
-        vscode.commands.registerCommand('sonara.codeMap.refresh', () => session ? session.requestScan() : startSession()),
-        vscode.commands.registerCommand('sonara.codeMap.expandFolder', (node: CodeMapNode) => provider.setSubtreeExpanded(node, true)),
-        vscode.commands.registerCommand('sonara.codeMap.collapseFolder', (node: CodeMapNode) => provider.setSubtreeExpanded(node, false)),
-        vscode.commands.registerCommand('sonara.codeMap.revealInOS', (node: CodeMapNode | undefined) => {
-            const [target] = targetsOf(node, undefined);
+        vscode.commands.registerCommand('sonara.codeMap.refresh', () => {
+            if (!isStarted) {
+                isStarted = true;
+                syncSessions();
+                return;
+            }
+            sessions.forEach(session => session.requestScan());
+        }),
+        vscode.commands.registerCommand('sonara.codeMap.expandFolder', (node: CodeMapItem) => provider.setSubtreeExpanded(node, true)),
+        vscode.commands.registerCommand('sonara.codeMap.collapseFolder', (node: CodeMapItem) => provider.setSubtreeExpanded(node, false)),
+        vscode.commands.registerCommand('sonara.codeMap.revealInOS', (node: CodeMapItem | undefined) => {
+            const [target] = targetsOf(selectedNodes(node, undefined));
             return revealInOS(target, `Sonara Code Map: ${target ? vscode.workspace.asRelativePath(target.uri, false) : ''} is no longer on disk.`);
         }),
-        vscode.commands.registerCommand('sonara.codeMap.copyPath', (node: CodeMapNode | undefined, selection: CodeMapNode[] | undefined) =>
-            copyPaths(targetsOf(node, selection), 'absolute')),
-        vscode.commands.registerCommand('sonara.codeMap.copyRelativePath', (node: CodeMapNode | undefined, selection: CodeMapNode[] | undefined) =>
-            copyPaths(targetsOf(node, selection), 'relative')),
-        vscode.commands.registerCommand('sonara.codeMap.delete', (node: CodeMapNode | undefined, selection: CodeMapNode[] | undefined) =>
-            moveToTrash(targetsOf(node, selection), {
+        vscode.commands.registerCommand('sonara.codeMap.copyPath', (node: CodeMapItem | undefined, selection: CodeMapItem[] | undefined) =>
+            copyPaths(targetsOf(selectedNodes(node, selection)), 'absolute')),
+        vscode.commands.registerCommand('sonara.codeMap.copyRelativePath', (node: CodeMapItem | undefined, selection: CodeMapItem[] | undefined) =>
+            copyPaths(targetsOf(selectedNodes(node, selection)), 'relative')),
+        vscode.commands.registerCommand('sonara.codeMap.delete', (node: CodeMapItem | undefined, selection: CodeMapItem[] | undefined) =>
+            moveToTrash(targetsOf(selectedNodes(node, selection).filter(current => current.type !== 'repository')), {
                 source: 'Sonara Code Map',
                 nothingOnDisk: 'Sonara Code Map: the selection is no longer on disk.',
                 folderNote: 'A folder is deleted with everything in it, including files that git ignores.',

@@ -322,7 +322,7 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
     }
 
     private collectTaskDtos(): MarkdownTaskDto[] {
-        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+        const workspaceRoot = this.store.project()?.uri;
         const result: MarkdownTaskDto[] = [];
         for (const entry of this.store.getEntries()) {
             if (entry.kind !== 'task') continue;
@@ -562,7 +562,7 @@ export class TasksWebviewPanel implements vscode.WebviewViewProvider, vscode.Dis
             tasks,
             errors,
             hasTasksDir: this.store.hasTasksDir(),
-            projectName: vscode.workspace.workspaceFolders?.[0]?.name ?? '',
+            projectName: this.store.project()?.name ?? '',
             collapsedSections: this.getCollapsedSections(),
             filters: this.getSanitizedFilters(),
             meta: {

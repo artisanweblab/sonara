@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { SonaraProject } from '../../../shared/sonara-project';
 import { ServerManager } from '../server/server-manager';
 import { AudioRecorder } from '../audio/audio-recorder';
 import { ApiClient } from '../server/api-client';
@@ -17,6 +18,6 @@ export interface CommandDeps {
     readonly serverLog: vscode.OutputChannel;
     readonly globalStorageDir: string;
     readonly activeProject: ActiveProject;
-    readonly logStoreFor: (folder: vscode.WorkspaceFolder) => LogStore;
+    readonly logStoreFor: (folder: SonaraProject) => LogStore;
     readonly getTranscriptStore: () => TranscriptStore;
 }

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { LEVEL_LABELS, REVIEW_LEVELS, ReviewLevel } from '../types';
-import { ReviewNode } from '../view/review-node';
+import { LevelContentNode, ReviewNode } from '../view/review-node';
 import { pickOne } from '../../../shared/quick-input';
 
 interface ActionItem extends vscode.QuickPickItem {
@@ -13,7 +13,7 @@ function levelSuffix(level: ReviewLevel): string {
     return `${level.slice(0, 1).toUpperCase()}${level.slice(1)}`;
 }
 
-function moveActions(node: ReviewNode): ActionItem[] {
+function moveActions(node: LevelContentNode): ActionItem[] {
     const all = node.type === 'level';
     const prefix = all ? 'sonara.review.moveAll' : 'sonara.review.move';
     const what = all ? 'All ' : '';
@@ -44,7 +44,7 @@ function fileActions(): ActionItem[] {
     ];
 }
 
-function nodeTitle(node: ReviewNode): string {
+function nodeTitle(node: LevelContentNode): string {
     if (node.type === 'level') {
         return LEVEL_LABELS[node.level];
     }
@@ -52,7 +52,7 @@ function nodeTitle(node: ReviewNode): string {
 }
 
 export async function executeShowActions(node: ReviewNode | undefined, selection: ReviewNode[] | undefined): Promise<void> {
-    if (!node) {
+    if (!node || node.type === 'repository') {
         return;
     }
     const actions = node.type === 'level' ? moveActions(node) : [...moveActions(node), ...fileActions()];

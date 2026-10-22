@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { SonaraProject } from '../../../../shared/sonara-project';
 import { DraftRecord, LogStore } from './log-store';
 import { VoiceRecord } from './types';
 import { buildPanelHtml } from './panel-html';
@@ -24,7 +25,7 @@ export class VoiceLogPanel implements vscode.WebviewViewProvider, vscode.Disposa
         logStore: LogStore,
         private readonly extensionUri: vscode.Uri,
         private readonly activeProject: ActiveProject,
-        private readonly logStoreFor: (folder: vscode.WorkspaceFolder) => LogStore,
+        private readonly logStoreFor: (folder: SonaraProject) => LogStore,
     ) {
         this.logStore = logStore;
         this.attachStoreListeners();

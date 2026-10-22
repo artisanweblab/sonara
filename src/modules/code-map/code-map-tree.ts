@@ -12,6 +12,7 @@ export interface CodeMapTotals {
 
 export interface CodeMapFolder {
     type: 'folder';
+    project: string;
     name: string;
     path: string;
     totals: CodeMapTotals;
@@ -20,6 +21,7 @@ export interface CodeMapFolder {
 
 export interface CodeMapFile {
     type: 'file';
+    project: string;
     name: string;
     path: string;
     stats: FileStats;
@@ -27,7 +29,7 @@ export interface CodeMapFile {
 
 export type CodeMapNode = CodeMapFolder | CodeMapFile;
 
-function emptyTotals(): CodeMapTotals {
+export function emptyTotals(): CodeMapTotals {
     return { files: 0, lines: 0, bytes: 0, added: 0, removed: 0 };
 }
 
@@ -72,22 +74,22 @@ function parentPath(nodePath: string): string {
     return separator < 0 ? '' : nodePath.slice(0, separator);
 }
 
-export function buildCodeMap(files: readonly FileStats[], sort: CodeMapSort): CodeMapFolder {
-    const root: CodeMapFolder = { type: 'folder', name: '', path: '', totals: emptyTotals(), children: [] };
+export function buildCodeMap(project: string, files: readonly FileStats[], sort: CodeMapSort): CodeMapFolder {
+    const root: CodeMapFolder = { type: 'folder', project, name: '', path: '', totals: emptyTotals(), children: [] };
     const folders = new Map<string, CodeMapFolder>([['', root]]);
     const folderAt = (folderPath: string): CodeMapFolder => {
         const known = folders.get(folderPath);
         if (known) {
             return known;
         }
-        const created: CodeMapFolder = { type: 'folder', name: folderPath.slice(folderPath.lastIndexOf('/') + 1), path: folderPath, totals: emptyTotals(), children: [] };
+        const created: CodeMapFolder = { type: 'folder', project, name: folderPath.slice(folderPath.lastIndexOf('/') + 1), path: folderPath, totals: emptyTotals(), children: [] };
         folderAt(parentPath(folderPath)).children.push(created);
         folders.set(folderPath, created);
         return created;
     };
     for (const stats of files) {
         const folder = folderAt(parentPath(stats.path));
-        folder.children.push({ type: 'file', name: stats.path.slice(stats.path.lastIndexOf('/') + 1), path: stats.path, stats });
+        folder.children.push({ type: 'file', project, name: stats.path.slice(stats.path.lastIndexOf('/') + 1), path: stats.path, stats });
         for (let current: CodeMapFolder | undefined = folder; current; current = current === root ? undefined : folders.get(parentPath(current.path))) {
             addFile(current.totals, stats);
         }

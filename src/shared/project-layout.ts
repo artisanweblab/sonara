@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { SonaraProject } from './sonara-project';
 import { ensureDir } from './fs-utils';
 import { TASKS_README_CONTENT } from '../modules/tasks/templates/tasks-readme';
 import { VOCABULARY_TEMPLATE } from '../modules/voice/templates/vocabulary-template';
@@ -35,7 +36,7 @@ This folder is created and maintained by the Sonara VS Code extension. It holds 
 
 Whether this folder (or parts of it) is committed to git is up to your project. The extension does not manage \`.gitignore\` - add the paths you want to ignore to your project's \`.gitignore\` if needed. Voice data may contain personal recordings; consider excluding \`voice-log/\` and \`voice-transcripts/\` from shared repositories.
 
-If your workspace has multiple folders, switch between them using the Active Project selector at the top of the Sonara sidebar. Each folder has its own independent dataset.
+A project is a workspace folder or a git repository inside it, the same repositories Source Control shows. Each project has its own independent dataset in its own \`.vscode/sonara/\`. Review and Code Map show every repository of the window at once; tasks, voice and time tracking work with the project picked in the Active Project selector.
 
 ## For AI agents
 
@@ -44,39 +45,39 @@ If your workspace has multiple folders, switch between them using the Active Pro
 - The owner reviews your uncommitted changes in levels with the Sonara Review panel. Run \`review/sonara-review levels\` (read-only, prints JSON) to see which parts the owner already accepted, and read \`review/README.md\` for the rest of the commands. Never write in \`review/\` and never change the git stage.
 `;
 
-export function sonaraRoot(folder: vscode.WorkspaceFolder): string {
+export function sonaraRoot(folder: SonaraProject): string {
     return sonaraRootIn(folder.uri.fsPath);
 }
 
-export function tasksDir(folder: vscode.WorkspaceFolder): string {
+export function tasksDir(folder: SonaraProject): string {
     return path.join(folder.uri.fsPath, TASKS_FOLDER_NAME);
 }
 
-export function voiceLogDir(folder: vscode.WorkspaceFolder): string {
+export function voiceLogDir(folder: SonaraProject): string {
     return path.join(folder.uri.fsPath, VOICE_LOG_FOLDER_NAME);
 }
 
-export function voiceLogFile(folder: vscode.WorkspaceFolder): string {
+export function voiceLogFile(folder: SonaraProject): string {
     return path.join(voiceLogDir(folder), 'voice-log.jsonl');
 }
 
-export function vocabularyFile(folder: vscode.WorkspaceFolder): string {
+export function vocabularyFile(folder: SonaraProject): string {
     return path.join(sonaraRoot(folder), 'vocabulary.md');
 }
 
-export function transcriptsDir(folder: vscode.WorkspaceFolder): string {
+export function transcriptsDir(folder: SonaraProject): string {
     return path.join(folder.uri.fsPath, VOICE_TRANSCRIPTS_FOLDER_NAME);
 }
 
-export function timeTrackerDir(folder: vscode.WorkspaceFolder): string {
+export function timeTrackerDir(folder: SonaraProject): string {
     return path.join(folder.uri.fsPath, TIME_TRACKER_FOLDER_NAME);
 }
 
-export function timeTrackerDaysDir(folder: vscode.WorkspaceFolder): string {
+export function timeTrackerDaysDir(folder: SonaraProject): string {
     return path.join(timeTrackerDir(folder), 'days');
 }
 
-export function reviewDir(folder: vscode.WorkspaceFolder): string {
+export function reviewDir(folder: SonaraProject): string {
     return reviewDirIn(folder.uri.fsPath);
 }
 
@@ -91,6 +92,8 @@ const EARLIER_ROOT_README_HASHES = [
     '12bed207b7b76e12a296a56c174d586f93a4fe2551a0ad89b946a6e58a6227f9',
     'b26ca1a9b0d8a58a590d6fe2d011b6ed6e62d395d6dd15c97662a3a62c8969c1',
     'afa3d378ef3e132d1194a65058aa1d626cc2b8fdca5525d851cc958e4b07a2c9',
+    'fdfff36f26a7169b2574d15d25083c1e1c092ec6ba6b3a2a43f7cf47ef3750b0',
+    'e87454d2d3c2561446d2f6bc009a7093b7eb2e1a70c2a55515800db9c0051bb5',
 ];
 const EARLIER_TASKS_README_HASHES = [
     '5cb91741a307b16015a1cab6b0078e1027f516cff67e2ad7068ab127de43b67f',
@@ -141,7 +144,7 @@ function refreshSeed(seed: SeedFile): string | null {
     return updatePath;
 }
 
-export function ensureSonaraProject(folder: vscode.WorkspaceFolder): void {
+export function ensureSonaraProject(folder: SonaraProject): void {
     ensureDir(sonaraRoot(folder));
     ensureDir(tasksDir(folder));
     ensureDir(voiceLogDir(folder));

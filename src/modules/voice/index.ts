@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { SonaraProject } from '../../shared/sonara-project';
 import { registerVoiceCommand } from './commands/voice-command';
 
 import { ServerManager } from './server/server-manager';
@@ -105,7 +106,7 @@ export async function registerVoiceModule(
     const logStoreCache = new Map<string, LogStore>();
     const emptyLogStore = new LogStore(null);
 
-    function logStoreFor(folder: vscode.WorkspaceFolder): LogStore {
+    function logStoreFor(folder: SonaraProject): LogStore {
         const key = folder.uri.toString();
         let store = logStoreCache.get(key);
         if (!store) {

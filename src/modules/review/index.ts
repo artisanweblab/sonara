@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ActiveProject } from '../../shared/active-project';
+import { ProjectCatalog } from '../../shared/project-catalog';
 import { reviewDir } from '../../shared/project-layout';
 import { registerLoggedCommand } from '../../shared/output-log';
 import { withTimestamps } from '../../shared/timestamped-channel';
@@ -14,10 +14,9 @@ import { executeOpenPreview } from './commands/preview-command';
 import { executeShowActions } from './commands/actions-menu-command';
 import { executeShowSummary } from './commands/show-summary-command';
 import { ReviewService, inactiveMessage } from './review-service';
-import { ReviewServiceHolder } from './review-service-holder';
+import { ReviewServices } from './review-services';
 import { REVIEW_LEVELS, ReviewLevel } from './types';
-import { LevelChangeReference } from './review-service';
-import { ChangeMoveDirection, LevelChangeLensProvider, MOVE_CHANGE_COMMAND } from './view/level-change-lens-provider';
+import { ChangeMoveDirection, LevelChangeLensProvider, MOVE_CHANGE_COMMAND, ProjectChangeReference } from './view/level-change-lens-provider';
 import { DiffCodeLensPrompt } from './view/diff-code-lens-prompt';
 import { BinaryLevelPreview } from './view/binary-level-preview';
 import { LevelDocumentProvider } from './view/level-document-provider';
@@ -81,7 +80,25 @@ function loggedCommand(logger: ReviewLogger, command: string, handler: (...args:
     return registerLoggedCommand(logger, 'Sonara Review', command, handler, describeArguments);
 }
 
-export function registerReviewModule(context: vscode.ExtensionContext, activeProject: ActiveProject): void {
+function newChangesBadge(services: readonly ReviewService[]): vscode.ViewBadge | undefined {
+    const summaries = services.map(service => summarizeLevel(service.getAtomsByLevel().get('new') ?? []));
+    const files = summaries.reduce((sum, summary) => sum + summary.fileCount, 0);
+    const added = summaries.reduce((sum, summary) => sum + summary.addedLines, 0);
+    const removed = summaries.reduce((sum, summary) => sum + summary.removedLines, 0);
+    return files > 0
+        ? { value: files, tooltip: `${files} ${files === 1 ? 'file has' : 'files have'} changes on New, lines: +${added} -${removed}` }
+        : undefined;
+}
+
+function viewMessage(services: readonly ReviewService[], catalog: ProjectCatalog): string | undefined {
+    if (services.length === 0) {
+        return `Sonara Review is not active: ${catalog.describeMissingGit()}.`;
+    }
+    const [single] = services;
+    return services.length === 1 && !single.isActive() && single.getIdleReason() ? inactiveMessage(single) : undefined;
+}
+
+export function registerReviewModule(context: vscode.ExtensionContext, catalog: ProjectCatalog): void {
     const channel = vscode.window.createOutputChannel('Sonara Review');
     const output = withTimestamps(channel);
     let isDebugLog = vscode.workspace.getConfiguration('sonara.review').get<boolean>('debugLog', false);
@@ -91,8 +108,16 @@ export function registerReviewModule(context: vscode.ExtensionContext, activePro
             isDebugLog = vscode.workspace.getConfiguration('sonara.review').get<boolean>('debugLog', false);
         }
     }));
-    const holder = new ReviewServiceHolder();
-    const provider = new ReviewTreeProvider(holder);
+    const services = new ReviewServices(project => {
+        logger.info(`Review project: ${project.uri.fsPath}`);
+        ReviewCliLauncher.install(project.uri.fsPath, context.extensionPath, logger);
+        const service = new ReviewService(project, logger);
+        service.start().catch(error => {
+            logger.error(`Review failed to start for ${project.uri.fsPath}`, error);
+        });
+        return service;
+    });
+    const provider = new ReviewTreeProvider(services);
     const treeView = vscode.window.createTreeView(ReviewTreeProvider.VIEW_ID, {
         treeDataProvider: provider,
         canSelectMany: true,
@@ -104,93 +129,81 @@ export function registerReviewModule(context: vscode.ExtensionContext, activePro
         treeView.onDidCollapseElement(event => provider.rememberExpanded(event.element, false)),
     );
     const updateView = (): void => {
-        const service = holder.get();
-        treeView.message = service && !service.isActive() && service.getIdleReason() ? inactiveMessage(service) : undefined;
-        const newSummary = summarizeLevel(service?.getAtomsByLevel().get('new') ?? []);
-        const newFiles = newSummary.fileCount;
-        treeView.badge = newFiles > 0
-            ? { value: newFiles, tooltip: `${newFiles} ${newFiles === 1 ? 'file has' : 'files have'} changes on New, lines: +${newSummary.addedLines} -${newSummary.removedLines}` }
-            : undefined;
+        const running = services.all();
+        treeView.message = viewMessage(running, catalog);
+        treeView.badge = newChangesBadge(running.filter(service => service.isActive()));
     };
-    context.subscriptions.push(holder.onDidChange(updateView));
-    const documents = new LevelDocumentProvider(holder);
+    context.subscriptions.push(services.onDidChange(updateView));
+    const documents = new LevelDocumentProvider(services);
     const binaryPreview = new BinaryLevelPreview(vscode.Uri.joinPath(context.globalStorageUri, 'review-binary-preview'));
     void binaryPreview.clear();
-    const opener = new ReviewDiffOpener(documents, new DiffCodeLensPrompt(context.globalState, logger), holder, binaryPreview);
+    const opener = new ReviewDiffOpener(documents, new DiffCodeLensPrompt(context.globalState, logger), services, binaryPreview);
     const lenses = new LevelChangeLensProvider(documents);
     context.subscriptions.push(
         logger,
         channel,
-        holder,
+        services,
         provider,
         treeView,
         documents,
         vscode.workspace.registerTextDocumentContentProvider(LevelDocumentProvider.SCHEME, documents),
         lenses,
         vscode.languages.registerCodeLensProvider({ scheme: LevelDocumentProvider.SCHEME }, lenses),
-        new ReviewStatusBar(holder, FOCUS_COMMAND),
+        new ReviewStatusBar(services, FOCUS_COMMAND),
     );
 
-    const startFor = (folder: vscode.WorkspaceFolder | undefined): void => {
-        if (!folder) {
-            holder.set(undefined);
-            return;
+    const activeServices = async (): Promise<ReviewService[]> => {
+        const active = services.all().filter(service => service.isActive());
+        if (active.length === 0) {
+            await vscode.window.showInformationMessage(viewMessage(services.all(), catalog) ?? inactiveMessage(services.all()[0]));
         }
-        logger.info(`Active project: ${folder.uri.fsPath}`);
-        ReviewCliLauncher.install(folder.uri.fsPath, context.extensionPath, logger);
-        const service = new ReviewService(folder, logger);
-        holder.set(service);
-        service.start().catch(error => {
-            logger.error('Review failed to start', error);
-        });
-    };
-
-    const withService = async (action: (service: ReviewService) => Promise<void> | void): Promise<void> => {
-        const service = holder.get();
-        if (!service || !service.isActive()) {
-            await vscode.window.showInformationMessage(inactiveMessage(service));
-            return;
-        }
-        await action(service);
+        return active;
     };
 
     context.subscriptions.push(
-        activeProject.onDidChange(folder => startFor(folder)),
+        catalog.onDidChange(() => services.sync(catalog.gitProjects())),
         loggedCommand(logger, 'sonara.review.showSummary', () => {
             logger.flush();
-            executeShowSummary(output, holder.get());
+            executeShowSummary(output, services.all());
         }),
-        loggedCommand(logger, 'sonara.review.checkStorage', () => {
+        loggedCommand(logger, 'sonara.review.checkStorage', async () => {
             logger.flush();
-            const folder = activeProject.get();
-            return executeCheckStorage(output, folder ? reviewDir(folder) : undefined);
+            const running = services.all();
+            if (running.length === 0) {
+                await executeCheckStorage(output, undefined);
+            }
+            for (const service of running) {
+                await executeCheckStorage(output, reviewDir(service.project));
+            }
         }),
-        loggedCommand(logger, 'sonara.review.refresh', () => withService(service => service.requestFullScan())),
-        loggedCommand(logger, OPEN_LEVEL_DIFF_COMMAND, async (repoPath: unknown, level: unknown) => {
+        loggedCommand(logger, 'sonara.review.refresh', async () => {
+            (await activeServices()).forEach(service => service.requestFullScan());
+        }),
+        loggedCommand(logger, OPEN_LEVEL_DIFF_COMMAND, async (project: unknown, repoPath: unknown, level: unknown) => {
             const knownLevel = REVIEW_LEVELS.find(candidate => candidate === level) as ReviewLevel | undefined;
-            if (typeof repoPath !== 'string' || !knownLevel) {
+            if (typeof project !== 'string' || typeof repoPath !== 'string' || !knownLevel) {
                 await vscode.window.showWarningMessage('Sonara Review: the level diff could not be opened, the file or level is unknown.');
                 return;
             }
-            await opener.openLevelDiff(repoPath, knownLevel);
+            await opener.openLevelDiff(project, repoPath, knownLevel);
         }),
         loggedCommand(logger, 'sonara.review.openFile', (uri: unknown) =>
-            withService(service => opener.openWorkingFile(service, uri instanceof vscode.Uri ? uri : undefined))),
+            opener.openWorkingFile(uri instanceof vscode.Uri ? uri : undefined)),
         loggedCommand(logger, 'sonara.review.openPreview', (uri: unknown) =>
             executeOpenPreview(uri instanceof vscode.Uri ? uri : undefined)),
         loggedCommand(logger, MOVE_CHANGE_COMMAND, (reference: unknown, direction: unknown) =>
-            executeMoveChange(holder, documents, reference as LevelChangeReference | undefined, direction as ChangeMoveDirection)),
+            executeMoveChange(services, documents, reference as ProjectChangeReference | undefined, direction as ChangeMoveDirection)),
         ...CHANGE_AT_CURSOR_COMMANDS.map(([command, direction]) =>
-            loggedCommand(logger, command, () => executeMoveChangeAtCursor(holder, documents, direction))),
-        loggedCommand(logger, 'sonara.review.nextNewChange', () => executeNavigateNewChange(holder, provider, opener, 1)),
-        loggedCommand(logger, 'sonara.review.previousNewChange', () => executeNavigateNewChange(holder, provider, opener, -1)),
+            loggedCommand(logger, command, () => executeMoveChangeAtCursor(services, documents, direction))),
+        loggedCommand(logger, 'sonara.review.nextNewChange', () => executeNavigateNewChange(services, provider, opener, 1)),
+        loggedCommand(logger, 'sonara.review.previousNewChange', () => executeNavigateNewChange(services, provider, opener, -1)),
         loggedCommand(logger, 'sonara.review.copyPath', (node: unknown, selection: unknown) =>
-            executeCopyPaths(holder, provider, 'absolute', node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
+            executeCopyPaths(services, provider, 'absolute', node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
         loggedCommand(logger, 'sonara.review.copyRelativePath', (node: unknown, selection: unknown) =>
-            executeCopyPaths(holder, provider, 'relative', node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
-        loggedCommand(logger, 'sonara.review.revealInOS', (node: unknown) => executeRevealInOS(holder, provider, node as ReviewNode | undefined)),
+            executeCopyPaths(services, provider, 'relative', node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
+        loggedCommand(logger, 'sonara.review.revealInOS', (node: unknown) => executeRevealInOS(services, provider, node as ReviewNode | undefined)),
         loggedCommand(logger, 'sonara.review.delete', (node: unknown, selection: unknown) =>
-            executeDelete(holder, provider, node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
+            executeDelete(services, provider, node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
         loggedCommand(logger, 'sonara.review.showActions', (node: unknown, selection: unknown) =>
             executeShowActions(node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
         loggedCommand(logger, 'sonara.review.viewAsTree', () => setViewMode('tree')),
@@ -201,9 +214,9 @@ export function registerReviewModule(context: vscode.ExtensionContext, activePro
             logger,
             command,
             (node: unknown, selection: unknown) =>
-                executeMoveLevel(holder, provider, direction, node as ReviewNode | undefined, selection as ReviewNode[] | undefined),
+                executeMoveLevel(services, provider, direction, node as ReviewNode | undefined, selection as ReviewNode[] | undefined),
         )),
     );
 
-    startFor(activeProject.get());
+    services.sync(catalog.gitProjects());
 }

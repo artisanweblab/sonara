@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { SonaraProject } from '../../shared/sonara-project';
 import { reviewDir } from '../../shared/project-layout';
 import { GitCommandError } from './git/git-command-error';
 import { GitReader } from './git/git-reader';
@@ -37,7 +38,9 @@ export interface ChangeMoveResult {
 }
 
 export function inactiveMessage(service: ReviewService | undefined): string {
-    return `Sonara Review is not active for this project: ${service?.getIdleReason() ?? 'no project folder is open'}.`;
+    return service
+        ? `Sonara Review is not active for ${service.project.name}: ${service.getIdleReason()}.`
+        : 'Sonara Review: this item belongs to a repository that is no longer open.';
 }
 
 export class ReviewService implements vscode.Disposable {
@@ -67,7 +70,7 @@ export class ReviewService implements vscode.Disposable {
     private isDisposed = false;
 
     constructor(
-        private readonly folder: vscode.WorkspaceFolder,
+        private readonly folder: SonaraProject,
         private readonly logger: ReviewLogger,
     ) {
         this.blobs = new ReviewBlobStore(reviewDir(folder));
@@ -157,6 +160,10 @@ export class ReviewService implements vscode.Disposable {
         this.isFullPending = true;
         await this.drain();
         this.collector.schedule();
+    }
+
+    get project(): SonaraProject {
+        return this.folder;
     }
 
     isActive(): boolean {

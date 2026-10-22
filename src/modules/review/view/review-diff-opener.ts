@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { ReviewService } from '../review-service';
-import { ReviewServiceHolder } from '../review-service-holder';
+import { inactiveMessage } from '../review-service';
+import { ReviewServices } from '../review-services';
 import { LEVEL_LABELS, ReviewLevel } from '../types';
 import { BinaryLevelPreview } from './binary-level-preview';
 import { DiffCodeLensPrompt } from './diff-code-lens-prompt';
@@ -16,23 +16,23 @@ export class ReviewDiffOpener {
     constructor(
         private readonly documents: LevelDocumentProvider,
         private readonly codeLensPrompt: DiffCodeLensPrompt,
-        private readonly holder: ReviewServiceHolder,
+        private readonly services: ReviewServices,
         private readonly binaryPreview: BinaryLevelPreview,
     ) {}
 
-    async openLevelDiff(repoPath: string, level: ReviewLevel, revealLine?: number): Promise<void> {
-        if (this.holder.get()?.getFile(repoPath)?.scanned.kind === 'opaque') {
-            const document = await this.documents.document(repoPath, level);
+    async openLevelDiff(project: string, repoPath: string, level: ReviewLevel, revealLine?: number): Promise<void> {
+        if (this.services.get(project)?.getFile(repoPath)?.scanned.kind === 'opaque') {
+            const document = await this.documents.document(project, repoPath, level);
             if (document) {
-                await this.binaryPreview.open(repoPath, level, document);
+                await this.binaryPreview.open(`${path.basename(project)}/${repoPath}`, level, document);
                 return;
             }
         }
-        const before = LevelDocumentProvider.uriFor({ repoPath, level, side: 'before' });
-        const after = LevelDocumentProvider.uriFor({ repoPath, level, side: 'after' });
+        const before = LevelDocumentProvider.uriFor({ project, repoPath, level, side: 'before' });
+        const after = LevelDocumentProvider.uriFor({ project, repoPath, level, side: 'after' });
         const title = `${path.posix.basename(repoPath)} (${LEVEL_LABELS[level]})`;
-        const line = revealLine ?? await this.documents.firstChangeLine(repoPath, level);
-        const single = await this.documents.sideToShow(repoPath, level);
+        const line = revealLine ?? await this.documents.firstChangeLine(project, repoPath, level);
+        const single = await this.documents.sideToShow(project, repoPath, level);
         if (single) {
             const uri = single === 'after' ? after : before;
             const document = await vscode.workspace.openTextDocument(uri);
@@ -43,11 +43,16 @@ export class ReviewDiffOpener {
         void this.codeLensPrompt.showIfNeeded();
     }
 
-    async openWorkingFile(service: ReviewService, uri: vscode.Uri | undefined): Promise<void> {
+    async openWorkingFile(uri: vscode.Uri | undefined): Promise<void> {
         const target = uri ?? vscode.window.activeTextEditor?.document.uri;
         const address = target ? LevelDocumentProvider.parse(target) : null;
         if (!address) {
             await vscode.window.showInformationMessage('Sonara Review: Open File works from a level diff opened in the Review panel.');
+            return;
+        }
+        const service = this.services.get(address.project);
+        if (!service || !service.isActive()) {
+            await vscode.window.showInformationMessage(inactiveMessage(service));
             return;
         }
         const line = await service.firstWorkingLine(address.repoPath, address.level);

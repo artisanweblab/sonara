@@ -7,6 +7,10 @@ export const MOVE_CHANGE_COMMAND = 'sonara.review.moveChange';
 
 export type ChangeMoveDirection = 'up' | 'down' | 'pick';
 
+export interface ProjectChangeReference extends LevelChangeReference {
+    project: string;
+}
+
 export class LevelChangeLensProvider implements vscode.CodeLensProvider, vscode.Disposable {
     private readonly emitter = new vscode.EventEmitter<void>();
     readonly onDidChangeCodeLenses = this.emitter.event;
@@ -28,7 +32,8 @@ export class LevelChangeLensProvider implements vscode.CodeLensProvider, vscode.
         const lenses: vscode.CodeLens[] = [];
         const hasContentChange = shown.changes.some(change => !change.isExistence && change.label === null);
         for (const change of shown.changes) {
-            const reference: LevelChangeReference = {
+            const reference: ProjectChangeReference = {
+                project: address.project,
                 repoPath: address.repoPath,
                 level: address.level,
                 changeId: change.id,
@@ -46,7 +51,7 @@ export class LevelChangeLensProvider implements vscode.CodeLensProvider, vscode.
 
     private lensesFor(
         range: vscode.Range,
-        reference: LevelChangeReference,
+        reference: ProjectChangeReference,
         level: ReviewLevel,
         label: string | null,
         isMode: boolean,

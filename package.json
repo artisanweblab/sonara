@@ -441,7 +441,7 @@
       "view/title": [
         {
           "command": "sonara.activeProject.pick",
-          "when": "view == sonara.tasks || view == sonara.review || view == sonara.codeMap || view == sonara.voice.log || view == sonara.voice.transcripts",
+          "when": "view == sonara.tasks || view == sonara.voice.log || view == sonara.voice.transcripts",
           "group": "navigation@99"
         },
         {
@@ -555,27 +555,27 @@
       "view/item/context": [
         {
           "command": "sonara.codeMap.expandFolder",
-          "when": "view == sonara.codeMap && viewItem == codeMapFolder",
+          "when": "view == sonara.codeMap && viewItem =~ /^codeMap(Folder|Repository)$/",
           "group": "inline@1"
         },
         {
           "command": "sonara.codeMap.collapseFolder",
-          "when": "view == sonara.codeMap && viewItem == codeMapFolder",
+          "when": "view == sonara.codeMap && viewItem =~ /^codeMap(Folder|Repository)$/",
           "group": "inline@2"
         },
         {
           "command": "sonara.codeMap.revealInOS",
-          "when": "view == sonara.codeMap && viewItem =~ /^codeMap(File|Folder)$/",
+          "when": "view == sonara.codeMap && viewItem =~ /^codeMap(File|Folder|Repository)$/",
           "group": "3_reveal@1"
         },
         {
           "command": "sonara.codeMap.copyPath",
-          "when": "view == sonara.codeMap && viewItem =~ /^codeMap(File|Folder)$/",
+          "when": "view == sonara.codeMap && viewItem =~ /^codeMap(File|Folder|Repository)$/",
           "group": "4_copyPath@1"
         },
         {
           "command": "sonara.codeMap.copyRelativePath",
-          "when": "view == sonara.codeMap && viewItem =~ /^codeMap(File|Folder)$/",
+          "when": "view == sonara.codeMap && viewItem =~ /^codeMap(File|Folder|Repository)$/",
           "group": "4_copyPath@2"
         },
         {
@@ -585,12 +585,12 @@
         },
         {
           "command": "sonara.review.expandFolder",
-          "when": "view == sonara.review && viewItem =~ /^review(Level|Folder)\\./",
+          "when": "view == sonara.review && viewItem =~ /^review(Repository$|(Level|Folder)\\.)/",
           "group": "inline@1"
         },
         {
           "command": "sonara.review.collapseFolder",
-          "when": "view == sonara.review && viewItem =~ /^review(Level|Folder)\\./",
+          "when": "view == sonara.review && viewItem =~ /^review(Repository$|(Level|Folder)\\.)/",
           "group": "inline@2"
         },
         {

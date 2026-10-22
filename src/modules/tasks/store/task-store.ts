@@ -5,6 +5,7 @@ import { parseTaskFile } from '../parser/parse-task-file';
 import { pathExists } from '../../../shared/fs-utils';
 import { ActiveProject } from '../../../shared/active-project';
 import { tasksDir as layoutTasksDir } from '../../../shared/project-layout';
+import { SonaraProject } from '../../../shared/sonara-project';
 
 const README_FILENAME_LOWERCASE = 'readme.md';
 
@@ -79,6 +80,10 @@ export class TaskStore implements vscode.Disposable {
             }
         }
         return Array.from(set).sort();
+    }
+
+    public project(): SonaraProject | undefined {
+        return this.activeProject.get();
     }
 
     public async initialize(): Promise<void> {

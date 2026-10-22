@@ -9,10 +9,18 @@ function formatCounts(counts: Map<ReviewLevel, number>): string {
         .join(', ');
 }
 
-export function executeShowSummary(output: vscode.OutputChannel, service: ReviewService | undefined): void {
+export function executeShowSummary(output: vscode.OutputChannel, services: readonly ReviewService[]): void {
     output.show(true);
-    if (!service || !service.isActive()) {
-        output.appendLine('Review summary: no active git repository for the current project.');
+    if (services.length === 0) {
+        output.appendLine('Review summary: no git repository is open.');
+        return;
+    }
+    services.forEach(service => appendSummary(output, service));
+}
+
+function appendSummary(output: vscode.OutputChannel, service: ReviewService): void {
+    if (!service.isActive()) {
+        output.appendLine(`Review summary for ${service.project.uri.fsPath}: not active, ${service.getIdleReason()}.`);
         return;
     }
     const byLevel = service.getAtomsByLevel();

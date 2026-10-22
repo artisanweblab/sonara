@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import { LevelSelection } from '../review-level-mover';
-import { inactiveMessage } from '../review-service';
-import { ReviewServiceHolder } from '../review-service-holder';
+import { ReviewService, inactiveMessage } from '../review-service';
+import { ReviewServices } from '../review-services';
 import { LEVEL_LABELS, REVIEW_LEVELS, REVIEW_LEVELS_TOP_DOWN, ReviewLevel, reviewLevelRank } from '../types';
-import { ReviewNode } from '../view/review-node';
+import { LevelContentNode, ReviewNode } from '../view/review-node';
 import { ReviewTreeProvider } from '../view/review-tree-provider';
 import { pickOne } from '../../../shared/quick-input';
 
@@ -35,29 +35,36 @@ export async function pickLevel(current: ReviewLevel): Promise<ReviewLevel | nul
     return picked ? picked.level : null;
 }
 
+interface MoveBatch {
+    service: ReviewService;
+    target: ReviewLevel;
+    selections: LevelSelection[];
+}
+
 export async function executeMoveLevel(
-    holder: ReviewServiceHolder,
+    services: ReviewServices,
     provider: ReviewTreeProvider,
     direction: MoveDirection,
     node: ReviewNode | undefined,
     selection: readonly ReviewNode[] | undefined,
 ): Promise<void> {
-    const service = holder.get();
-    if (!service || !service.isActive()) {
-        await vscode.window.showInformationMessage(inactiveMessage(service));
-        return;
-    }
-    if (!node) {
+    if (!node || node.type === 'repository') {
         await vscode.window.showInformationMessage('Sonara Review: select a level, folder or file in the Review panel first.');
         return;
     }
-    const nodes = selection && selection.includes(node) ? selection : [node];
+    const nodes = (selection && selection.includes(node) ? selection : [node])
+        .filter((current): current is LevelContentNode => current.type !== 'repository');
+    const inactive = nodes.find(current => !services.get(current.project)?.isActive());
+    if (inactive) {
+        await vscode.window.showInformationMessage(inactiveMessage(services.get(inactive.project)));
+        return;
+    }
     const frozen = nodes.map(current => ({ current, selections: provider.selectionsOf(current) }));
     const picked = direction === 'pick' ? await pickLevel(node.level) : null;
     if (direction === 'pick' && !picked) {
         return;
     }
-    const byTarget = new Map<ReviewLevel, LevelSelection[]>();
+    const batches = new Map<string, MoveBatch>();
     const skipped: string[] = [];
     for (const { current, selections } of frozen) {
         const target = targetLevel(direction, current.level, picked);
@@ -67,20 +74,24 @@ export async function executeMoveLevel(
                 : `the changes are already on ${LEVEL_LABELS[target]}`);
             continue;
         }
-        if (selections.length === 0) {
+        const service = services.get(current.project);
+        if (selections.length === 0 || !service) {
             skipped.push(`nothing is on the ${LEVEL_LABELS[current.level]} level there`);
             continue;
         }
-        byTarget.set(target, [...(byTarget.get(target) ?? []), ...selections]);
+        const key = `${current.project}\0${target}`;
+        const batch = batches.get(key) ?? { service, target, selections: [] };
+        batch.selections.push(...selections);
+        batches.set(key, batch);
     }
-    if (byTarget.size === 0) {
+    if (batches.size === 0) {
         await vscode.window.showInformationMessage(`Sonara Review: nothing was moved, ${Array.from(new Set(skipped)).join('; ')}.`);
         return;
     }
     const failures: string[] = [];
     const refusals: string[] = [];
     const stalePaths = new Set<string>();
-    for (const [target, selections] of byTarget) {
+    for (const { service, target, selections } of batches.values()) {
         const report = await service.moveToLevel(selections, target);
         failures.push(...report.failures.map(failure => `${failure.path}: ${failure.message}`));
         refusals.push(...report.refusals);

@@ -1,8 +1,9 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { SonaraProject } from '../../../shared/sonara-project';
 import { ReviewLogger } from '../logging/review-logger';
-import type { API, Change, Repository } from './git-api';
-import { loadGitApi } from './git-extension';
+import type { API, Change, Repository } from '../../../shared/git/git-api';
+import { loadGitApi } from '../../../shared/git/git-extension';
 import { OPERATION_MARKERS } from './git-repository-state';
 
 const DEBOUNCE_MS = 500;
@@ -60,7 +61,7 @@ export class RepositoryWatcher implements vscode.Disposable {
     private isDisposed = false;
 
     constructor(
-        private readonly folder: vscode.WorkspaceFolder,
+        private readonly folder: SonaraProject,
         private readonly reviewRoot: string,
         private readonly logger: ReviewLogger,
     ) {}
@@ -126,7 +127,7 @@ export class RepositoryWatcher implements vscode.Disposable {
     }
 
     private watchFileSystem(): void {
-        const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(this.folder, '**/*'));
+        const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(this.folder.uri, '**/*'));
         const onUri = (uri: vscode.Uri): void => this.onFileSystemEvent(uri.fsPath);
         this.disposables.push(
             watcher,

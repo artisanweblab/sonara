@@ -4,7 +4,7 @@ Tasks, voice dictation, time tracking, and step-by-step review of uncommitted ch
 
 ![Sonara overview](./media/screenshots/overview.png)
 
-Sonara adds a sidebar with five panels - **Tasks**, **Review**, **Code Map**, **Voice Log**, and **Voice Transcripts** - plus a **Time Tracker** in the status bar. Each project (workspace folder) keeps its own data under `.vscode/sonara/`.
+Sonara adds a sidebar with five panels - **Tasks**, **Review**, **Code Map**, **Voice Log**, and **Voice Transcripts** - plus a **Time Tracker** in the status bar. Each project keeps its own data under its own `.vscode/sonara/`. A project is a workspace folder or a git repository inside it - the same repositories Source Control shows - so a folder that holds several repositories gives one project per repository.
 
 Every list or input Sonara opens at the top of the window has a close button in its title bar, so it can be dismissed on a touch screen without an Escape key.
 
@@ -29,19 +29,20 @@ Manage project tasks as plain markdown files - they travel with your repository.
 Review uncommitted changes in steps instead of two buckets (changed / staged). Built for code written by AI agents: mark what you have already read, and anything the agent changes afterwards comes back as new.
 
 - Five levels, from top to bottom: **Staged Changes**, **Verified**, **Read**, **Queued**, **New**. Staged Changes is the real git stage; the other levels are kept by the extension
-- The Review view carries a badge with the number of files that have changes on New, so a glance at the sidebar is enough to see there is something to look at; hover it for their lines
+- Every git repository of the window is reviewed at once, the same repositories Source Control shows. With several of them the panel shows one row per repository, `new: N · files: N · lines: +X -Y`, with its levels inside, the way Source Control groups changes; with one repository the levels sit at the top. Each repository keeps its levels in its own `.vscode/sonara/review/`
+- The Review view carries a badge with the number of files that have changes on New in all repositories, so a glance at the sidebar is enough to see there is something to look at; hover it for their lines
 - The panel lists exactly the files git reports as changed, grouped by level, as a folder tree or a flat list (`sonara.review.viewMode` and `sonara.review.compactFolders`). Each level shows `files: N (A… M… D…) · lines: +X -Y`: how many files were added, modified and deleted, and how many lines were added and removed, the way git counts them; a binary file has no lines
 - A file row carries one status letter on the right, Sonara's own, in the usual git colors: what happened to the file on this level compared with the level below (`A` added, `M` modified, `D` deleted, `U` conflict). The git letters and colors that other views put on files are left out of the panel
 - Each file shows its added and removed lines on this level (`+X -Y`); a binary file shows none
 - Each folder shows how many changed files it holds, subfolders included, and their lines (`files: N · lines: +X -Y`); hover it for the same summary as a level
-- A level and a folder have **Expand All** and **Collapse All** buttons that open or close everything inside them, folders included; Collapse All keeps the level or folder itself open
+- A repository, a level and a folder have **Expand All** and **Collapse All** buttons that open or close everything inside them, folders included; Collapse All keeps the level or folder itself open
 - Move a folder, a file, or a whole level with **Move Up**, **Move Down**, or straight to a level with **Move to Read**, **Move to Verified** and the rest, right in the context menu. Moving to Staged Changes stages the changes, moving down from it unstages them
 - Click a file to open the changes of that level only: the left side is `HEAD` plus all levels above, the right side adds this level. Both sides are read-only; **Open File** opens the real file for editing, and for a markdown file **Open Preview** renders the right side in a tab of the same column
 - A binary file is not forced into a text comparison: both versions are written out and opened with the editor that fits them, so an image opens as an image, audio in the player and video in the video preview, side by side. Levels keep copies of binary files up to 50 MB, so any level opens as a before/after pair; a larger file is kept by its fingerprint only, and when one side was not kept the panel opens the other one and says so
 - The context menu of a file or folder also has the usual actions: **Open Containing Folder**, **Copy Path**, **Copy Relative Path** and **Delete** (moves it to the Trash after a confirmation; a folder goes with everything in it, including files without changes). Copy and Delete work on every selected row. The `...` button on a row opens the same actions as a list, for touch screens and anywhere a right click is out of reach
 - A created or deleted file shows one row of actions, not two: its existence travels with its content, and only a mode change keeps a row of its own, and its actions are named **Move Permissions Up** and so on, so the two rows are never confused
 - Move a single change from the level diff with the CodeLens above it or with `Sonara: Move Change Up` / `Move Change Down` / `Move Change to Level...` for the change under the cursor
-- `Sonara: Next New Change` / `Previous New Change` walk through everything on New across files
+- `Sonara: Next New Change` / `Previous New Change` walk through everything on New across files and repositories
 - Any edit - yours or an agent's - lands on New and shows as the difference from the version you accepted; the accepted version stays on its level
 - Staging through the regular Source Control view counts as Staged Changes, and unstaging there drops the changes one level down, to Verified. Committed parts leave the panel; after `git stash` and `git stash pop` the levels come back if the files return byte-identical
 - Every action is logged to the **Sonara Review** output channel, failures with their stack trace
@@ -52,14 +53,15 @@ Review uncommitted changes in steps instead of two buckets (changed / staged). B
 See where the code of a project lives, the way a disk usage analyzer shows where the space goes.
 
 - A tree of the project with the numbers always on the row: a folder shows `files: N · lines: X · size`, a file shows `lines: X · size`; a binary file shows its size only
+- Every git repository of the window gets its own row with its totals and its folders inside, the same repositories Source Control shows; with one repository its folders sit at the top. A repository nested in another one is counted in its own row only
 - Uncommitted changes are added as `+X -Y` lines against the last commit; a file that is not in git yet counts all its lines as added
 - Counts the files git knows about plus new files that are not ignored; ignored folders such as `node_modules` stay out
-- The panel title carries the totals of the whole project
+- The panel title carries the totals of all repositories together
 - Order by line count, largest first, or by name with folders first - the button in the panel title switches between them (`sonara.codeMap.sortBy`)
 - Numbers update by themselves when files change, are staged or committed; only changed files are read again
 - Click a file to open it
-- A folder has **Expand All** and **Collapse All** buttons, the same as in Review
-- The context menu of a file or folder has **Open Containing Folder**, **Copy Path**, **Copy Relative Path** and **Delete** (to the Trash, with a confirmation); copy and delete work on several selected rows at once
+- A repository and a folder have **Expand All** and **Collapse All** buttons, the same as in Review
+- The context menu of a file or folder has **Open Containing Folder**, **Copy Path**, **Copy Relative Path** and **Delete** (to the Trash, with a confirmation); copy and delete work on several selected rows at once. A repository row has the same menu without Delete
 
 ### Voice
 
@@ -111,7 +113,7 @@ Track time per task, stored as plain daily files.
 1. **Open the sidebar.** Click the Sonara icon in the Activity Bar. Four panels appear: Tasks, Review, Voice Log, Voice Transcripts. The `.vscode/sonara/` folder is created automatically the first time you use a feature.
 2. **Create a task.** In the Tasks panel, click **New Task** (the `+` button), fill in the details, and it is saved as a markdown file.
 3. **Dictate.** Press `Ctrl+Shift+M` to start. On first use the Whisper model downloads (one time). Speak, then press `Ctrl+Shift+M` again to stop and save the entry to the Voice Log.
-4. **Multiple folders?** Use the **Active Project** selector at the top of the sidebar to switch between workspace folders - each keeps its own independent data.
+4. **Several projects?** Review and Code Map show every repository at once. Tasks, Voice Log, Voice Transcripts and the Time Tracker work with one project at a time: use the **Active Project** selector in the title of Tasks or the voice panels to switch between workspace folders and the git repositories inside them - each keeps its own independent data. Until you pick one, Sonara takes the only project there is, or the project of the file open in the editor; a project you picked stays active until you pick another.
 
 ## How the voice server works
 
@@ -170,7 +172,7 @@ A `README.md` describing the full format is generated inside `.vscode/sonara/tas
 
 ## Project files
 
-Everything Sonara stores lives under `.vscode/sonara/` in each workspace folder:
+Everything Sonara stores lives under `.vscode/sonara/` in each project folder:
 
 | Path | Contents |
 |------|----------|
