@@ -4,7 +4,7 @@ Tasks, voice dictation, time tracking, and step-by-step review of uncommitted ch
 
 ![Sonara overview](./media/screenshots/overview.png)
 
-Sonara adds a sidebar with four panels - **Tasks**, **Review**, **Voice Log**, and **Voice Transcripts** - plus a **Time Tracker** in the status bar. Each project (workspace folder) keeps its own data under `.vscode/sonara/`.
+Sonara adds a sidebar with five panels - **Tasks**, **Review**, **Code Map**, **Voice Log**, and **Voice Transcripts** - plus a **Time Tracker** in the status bar. Each project (workspace folder) keeps its own data under `.vscode/sonara/`.
 
 Every list or input Sonara opens at the top of the window has a close button in its title bar, so it can be dismissed on a touch screen without an Escape key.
 
@@ -46,6 +46,20 @@ Review uncommitted changes in steps instead of two buckets (changed / staged). B
 - Staging through the regular Source Control view counts as Staged Changes, and unstaging there drops the changes one level down, to Verified. Committed parts leave the panel; after `git stash` and `git stash pop` the levels come back if the files return byte-identical
 - Every action is logged to the **Sonara Review** output channel, failures with their stack trace
 - Stored under `.vscode/sonara/review/`
+
+### Code Map
+
+See where the code of a project lives, the way a disk usage analyzer shows where the space goes.
+
+- A tree of the project with the numbers always on the row: a folder shows `files: N · lines: X · size`, a file shows `lines: X · size`; a binary file shows its size only
+- Uncommitted changes are added as `+X -Y` lines against the last commit; a file that is not in git yet counts all its lines as added
+- Counts the files git knows about plus new files that are not ignored; ignored folders such as `node_modules` stay out
+- The panel title carries the totals of the whole project
+- Order by line count, largest first, or by name with folders first - the button in the panel title switches between them (`sonara.codeMap.sortBy`)
+- Numbers update by themselves when files change, are staged or committed; only changed files are read again
+- Click a file to open it
+- A folder has **Expand All** and **Collapse All** buttons, the same as in Review
+- The context menu of a file or folder has **Open Containing Folder**, **Copy Path**, **Copy Relative Path** and **Delete** (to the Trash, with a confirmation); copy and delete work on several selected rows at once
 
 ### Voice
 

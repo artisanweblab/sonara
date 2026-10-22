@@ -111,6 +111,56 @@
         "category": "Sonara"
       },
       {
+        "command": "sonara.codeMap.sortByName",
+        "title": "Sort by Name",
+        "category": "Sonara",
+        "icon": "$(case-sensitive)"
+      },
+      {
+        "command": "sonara.codeMap.sortByLines",
+        "title": "Sort by Lines",
+        "category": "Sonara",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "sonara.codeMap.refresh",
+        "title": "Refresh Code Map",
+        "category": "Sonara",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "sonara.codeMap.expandFolder",
+        "title": "Expand All",
+        "category": "Sonara",
+        "icon": "$(expand-all)"
+      },
+      {
+        "command": "sonara.codeMap.collapseFolder",
+        "title": "Collapse All",
+        "category": "Sonara",
+        "icon": "$(collapse-all)"
+      },
+      {
+        "command": "sonara.codeMap.revealInOS",
+        "title": "Open Containing Folder",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.codeMap.copyPath",
+        "title": "Copy Path",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.codeMap.copyRelativePath",
+        "title": "Copy Relative Path",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.codeMap.delete",
+        "title": "Delete",
+        "category": "Sonara"
+      },
+      {
         "command": "sonara.review.viewAsTree",
         "title": "View as Tree",
         "category": "Sonara",
@@ -391,7 +441,7 @@
       "view/title": [
         {
           "command": "sonara.activeProject.pick",
-          "when": "view == sonara.tasks || view == sonara.review || view == sonara.voice.log || view == sonara.voice.transcripts",
+          "when": "view == sonara.tasks || view == sonara.review || view == sonara.codeMap || view == sonara.voice.log || view == sonara.voice.transcripts",
           "group": "navigation@99"
         },
         {
@@ -408,6 +458,21 @@
           "command": "sonara.tasks.refresh",
           "when": "view == sonara.tasks",
           "group": "1_actions@1"
+        },
+        {
+          "command": "sonara.codeMap.sortByName",
+          "when": "view == sonara.codeMap && sonara.codeMap.sortBy == lines",
+          "group": "navigation@0"
+        },
+        {
+          "command": "sonara.codeMap.sortByLines",
+          "when": "view == sonara.codeMap && sonara.codeMap.sortBy == name",
+          "group": "navigation@0"
+        },
+        {
+          "command": "sonara.codeMap.refresh",
+          "when": "view == sonara.codeMap",
+          "group": "navigation@1"
         },
         {
           "command": "sonara.review.viewAsTree",
@@ -488,6 +553,36 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "sonara.codeMap.expandFolder",
+          "when": "view == sonara.codeMap && viewItem == codeMapFolder",
+          "group": "inline@1"
+        },
+        {
+          "command": "sonara.codeMap.collapseFolder",
+          "when": "view == sonara.codeMap && viewItem == codeMapFolder",
+          "group": "inline@2"
+        },
+        {
+          "command": "sonara.codeMap.revealInOS",
+          "when": "view == sonara.codeMap && viewItem =~ /^codeMap(File|Folder)$/",
+          "group": "3_reveal@1"
+        },
+        {
+          "command": "sonara.codeMap.copyPath",
+          "when": "view == sonara.codeMap && viewItem =~ /^codeMap(File|Folder)$/",
+          "group": "4_copyPath@1"
+        },
+        {
+          "command": "sonara.codeMap.copyRelativePath",
+          "when": "view == sonara.codeMap && viewItem =~ /^codeMap(File|Folder)$/",
+          "group": "4_copyPath@2"
+        },
+        {
+          "command": "sonara.codeMap.delete",
+          "when": "view == sonara.codeMap && viewItem =~ /^codeMap(File|Folder)$/",
+          "group": "5_modification@1"
+        },
         {
           "command": "sonara.review.expandFolder",
           "when": "view == sonara.review && viewItem =~ /^review(Level|Folder)\\./",
@@ -615,6 +710,30 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "sonara.codeMap.expandFolder",
+          "when": "false"
+        },
+        {
+          "command": "sonara.codeMap.collapseFolder",
+          "when": "false"
+        },
+        {
+          "command": "sonara.codeMap.revealInOS",
+          "when": "false"
+        },
+        {
+          "command": "sonara.codeMap.copyPath",
+          "when": "false"
+        },
+        {
+          "command": "sonara.codeMap.copyRelativePath",
+          "when": "false"
+        },
+        {
+          "command": "sonara.codeMap.delete",
+          "when": "false"
+        },
         {
           "command": "sonara.review.revealInOS",
           "when": "false"
@@ -778,18 +897,25 @@
           "order": 3
         },
         {
+          "type": "tree",
+          "id": "sonara.codeMap",
+          "name": "Code Map",
+          "icon": "media/icons/code-map.svg",
+          "order": 4
+        },
+        {
           "type": "webview",
           "id": "sonara.voice.log",
           "name": "Voice Log",
           "icon": "media/icons/voice-log.svg",
-          "order": 4
+          "order": 5
         },
         {
           "type": "webview",
           "id": "sonara.voice.transcripts",
           "name": "Voice Transcripts",
           "icon": "media/icons/voice-transcripts.svg",
-          "order": 5
+          "order": 6
         }
       ]
     },
@@ -931,6 +1057,13 @@
           "enum": ["tree", "list"],
           "enumDescriptions": ["Group files by folder", "Show a flat list of files"],
           "description": "How the Review panel lays out files."
+        },
+        "sonara.codeMap.sortBy": {
+          "type": "string",
+          "default": "lines",
+          "enum": ["lines", "name"],
+          "enumDescriptions": ["Largest folders and files by line count first", "Folders first, then files, by name"],
+          "description": "How the Code Map panel orders folders and files."
         },
         "sonara.review.compactFolders": {
           "type": "boolean",

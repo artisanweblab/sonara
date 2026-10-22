@@ -6,6 +6,7 @@ import { registerTasksModule } from './modules/tasks';
 import { registerVoiceModule } from './modules/voice';
 import { registerTimeTrackerModule } from './modules/time-tracker';
 import { registerReviewModule } from './modules/review';
+import { registerCodeMapModule } from './modules/code-map';
 import { TimerService } from './modules/time-tracker/timer-service';
 import { ServerManager } from './modules/voice/server/server-manager';
 
@@ -34,6 +35,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     const tasksHandles = await registerTasksModule(context, activeProject);
     registerReviewModule(context, activeProject);
+    registerCodeMapModule(context, activeProject);
 
     timeTracker = await registerTimeTrackerModule(context, activeProject, tasksHandles.store, tasksHandles.panel);
     // Voice setup may block on Whisper installation. Run it in the background so
