@@ -143,6 +143,7 @@ export function registerReviewModule(context: vscode.ExtensionContext, catalog: 
         logger,
         channel,
         services,
+        binaryPreview,
         provider,
         treeView,
         documents,
