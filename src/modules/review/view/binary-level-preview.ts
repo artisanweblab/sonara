@@ -46,7 +46,7 @@ export class BinaryLevelPreview implements vscode.Disposable {
             VIEW_TYPE,
             title,
             { viewColumn: vscode.ViewColumn.Active, preserveFocus: true },
-            { localResourceRoots: [this.root] },
+            { localResourceRoots: [this.root], enableScripts: true },
         );
         panel.onDidDispose(() => {
             if (this.panel === panel) {

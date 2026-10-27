@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { buildWebviewHtml } from '../../../shared/webview/html-template';
+import { PLAYER_SYNC_SCRIPT } from './binary-player-sync-script';
 
 export type BinarySideContent =
     | { kind: 'file'; source: string; bytes: number }
@@ -69,7 +70,7 @@ export function buildBinaryDiffHtml(title: string, fileName: string, sides: read
         title: escapeHtml(title),
         body: `<main class="sides">${sides.map(side => renderSide(side, kind)).join('')}</main>`,
         extraStyles: STYLES,
-        script: '',
+        script: kind === 'audio' || kind === 'video' ? PLAYER_SYNC_SCRIPT : '',
         mediaSource,
     });
 }
