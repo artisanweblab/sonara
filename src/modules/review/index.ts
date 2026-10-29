@@ -15,7 +15,7 @@ import { executeShowActions } from './commands/actions-menu-command';
 import { executeShowSummary } from './commands/show-summary-command';
 import { ReviewService, inactiveMessage } from './review-service';
 import { ReviewServices } from './review-services';
-import { REVIEW_LEVELS, ReviewLevel } from './types';
+import { REVIEW_LEVELS, ReviewLevel, SHOWN_LEVELS } from './types';
 import { ChangeMoveDirection, LevelChangeLensProvider, MOVE_CHANGE_COMMAND, ProjectChangeReference } from './view/level-change-lens-provider';
 import { DiffCodeLensPrompt } from './view/diff-code-lens-prompt';
 import { BinaryLevelPreview } from './view/binary-level-preview';
@@ -30,7 +30,7 @@ import { ReviewStatusBar } from './view/review-status-bar';
 const FOCUS_COMMAND = `${ReviewTreeProvider.VIEW_ID}.focus`;
 
 function levelMoveCommands(): ReadonlyArray<[string, MoveDirection]> {
-    return REVIEW_LEVELS.flatMap<[string, MoveDirection]>(level => {
+    return SHOWN_LEVELS.flatMap<[string, MoveDirection]>(level => {
         const suffix = `${level.slice(0, 1).toUpperCase()}${level.slice(1)}`;
         return [[`sonara.review.moveTo${suffix}`, level], [`sonara.review.moveAllTo${suffix}`, level]];
     });

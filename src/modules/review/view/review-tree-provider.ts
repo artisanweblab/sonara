@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { TreeExpansion } from '../../../shared/tree-expansion';
 import { ReviewService } from '../review-service';
 import { ReviewServices } from '../review-services';
-import { LEVEL_LABELS, REVIEW_LEVELS_TOP_DOWN, ReviewAtomState, ReviewLevel } from '../types';
+import { LEVEL_LABELS, SHOWN_LEVELS_TOP_DOWN, ReviewAtomState, ShownLevel, reviewLevelOf } from '../types';
 import { LevelContentNode, LevelFileEntry, LevelNode, RepositoryNode, ReviewNode } from './review-node';
 import { LevelSelection } from '../review-level-mover';
 import { treeItemUri } from './review-status-decorations';
@@ -18,11 +18,11 @@ export interface ProjectFile {
     path: string;
 }
 
-function folderKey(project: string, level: ReviewLevel, displayPath: string): string {
+function folderKey(project: string, level: ShownLevel, displayPath: string): string {
     return `${project}::${level}/${displayPath}`;
 }
 
-function levelKey(project: string, level: ReviewLevel): string {
+function levelKey(project: string, level: ShownLevel): string {
     return `${project}::level/${level}`;
 }
 
@@ -169,13 +169,13 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
                     ? `${node.displayPath}\n${countOf(summary.addedLines, 'line')} added, ${countOf(summary.removedLines, 'line')} removed`
                     : node.displayPath;
                 item.contextValue = `reviewFile.${node.level}`;
-                item.command = { command: OPEN_LEVEL_DIFF_COMMAND, title: 'Open Level Changes', arguments: [node.project, node.path, node.level] };
+                item.command = { command: OPEN_LEVEL_DIFF_COMMAND, title: 'Open Level Changes', arguments: [node.project, node.path, reviewLevelOf(node.level)] };
                 return item;
             }
         }
     }
 
-    orderedFiles(level: ReviewLevel): ProjectFile[] {
+    orderedFiles(level: ShownLevel): ProjectFile[] {
         const files: ProjectFile[] = [];
         const visit = (list: readonly ReviewNode[]): void => {
             for (const node of list) {
@@ -195,7 +195,7 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
 
     selectionsOf(node: LevelContentNode): LevelSelection[] {
         const files = node.type === 'level' ? node.entries.map(entry => ({ ...entry, level: node.level })) : collectFiles(node);
-        return files.map(file => ({ repoPath: file.path, level: file.level, generation: file.generation }));
+        return files.map(file => ({ repoPath: file.path, level: reviewLevelOf(file.level), generation: file.generation }));
     }
 
     private levelsOf(service: ReviewService): LevelNode[] {
@@ -203,7 +203,7 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
             return [];
         }
         const project = service.project.uri.fsPath;
-        return REVIEW_LEVELS_TOP_DOWN.map(level => ({ type: 'level', project, level, entries: this.entriesFor(service, level) }));
+        return SHOWN_LEVELS_TOP_DOWN.map(level => ({ type: 'level', project, level, entries: this.entriesFor(service, level) }));
     }
 
     private repositoryItem(node: RepositoryNode): vscode.TreeItem {
@@ -217,9 +217,8 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
         item.id = this.expansion.itemId(key);
         item.iconPath = new vscode.ThemeIcon('repo');
         if (service && isActive) {
-            const states = service.getFiles().flatMap(file => file.atoms);
-            const summary = summarizeLevel(states);
-            const newCount = summarizeLevel(states.filter(state => state.level === 'new')).fileCount;
+            const summary = summarizeLevel(service.getFiles().flatMap(file => file.atoms));
+            const newCount = summarizeLevel(service.getAtomsByLevel().get('new') ?? []).fileCount;
             item.description = `new: ${newCount} · ${describeLevel(summary)}`;
             item.tooltip = `${node.project}\n${levelTooltip(summary)}`;
         } else {
@@ -247,11 +246,11 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
         return item;
     }
 
-    private entriesFor(service: ReviewService, level: ReviewLevel): LevelFileEntry[] {
+    private entriesFor(service: ReviewService, level: ShownLevel): LevelFileEntry[] {
         const prefix = service.getProjectPrefix();
         const entries: LevelFileEntry[] = [];
         for (const file of service.getFiles()) {
-            const states: ReviewAtomState[] = file.atoms.filter(state => state.level === level);
+            const states: ReviewAtomState[] = file.atoms.filter(state => service.shownLevelOf(file.path, state.level) === level);
             if (states.length === 0) {
                 continue;
             }

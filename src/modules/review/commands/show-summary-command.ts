@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import { ReviewService } from '../review-service';
-import { REVIEW_LEVELS, REVIEW_LEVELS_TOP_DOWN, ReviewLevel } from '../types';
+import { SHOWN_LEVELS, SHOWN_LEVELS_TOP_DOWN, ShownLevel } from '../types';
 
-function formatCounts(counts: Map<ReviewLevel, number>): string {
-    return REVIEW_LEVELS_TOP_DOWN
+function formatCounts(counts: Map<ShownLevel, number>): string {
+    return SHOWN_LEVELS_TOP_DOWN
         .filter(level => (counts.get(level) ?? 0) > 0)
         .map(level => `${level}: ${counts.get(level)}`)
         .join(', ');
@@ -24,16 +24,17 @@ function appendSummary(output: vscode.OutputChannel, service: ReviewService): vo
         return;
     }
     const byLevel = service.getAtomsByLevel();
-    const totals = new Map<ReviewLevel, number>(REVIEW_LEVELS.map(level => [level, byLevel.get(level)?.length ?? 0]));
+    const totals = new Map<ShownLevel, number>(SHOWN_LEVELS.map(level => [level, byLevel.get(level)?.length ?? 0]));
     const files = service.getFiles();
     output.appendLine(`Review summary for ${service.getRepositoryRoot()} (${files.length} files)`);
-    for (const level of REVIEW_LEVELS_TOP_DOWN) {
+    for (const level of SHOWN_LEVELS_TOP_DOWN) {
         output.appendLine(`  ${level.padEnd(8)} ${totals.get(level) ?? 0}`);
     }
     for (const file of files) {
-        const counts = new Map<ReviewLevel, number>();
+        const counts = new Map<ShownLevel, number>();
         for (const state of file.atoms) {
-            counts.set(state.level, (counts.get(state.level) ?? 0) + 1);
+            const level = service.shownLevelOf(file.path, state.level);
+            counts.set(level, (counts.get(level) ?? 0) + 1);
         }
         output.appendLine(`  ${file.path}  ${formatCounts(counts)}`);
     }

@@ -12,13 +12,14 @@ import { ReviewEngine, createReviewEngine } from './review-engine';
 import { LevelMoveReport, LevelMoveRequest, LevelSelection, requestsFromSelections } from './review-level-mover';
 import { ReviewPasses } from './review-passes';
 import { ReviewStorageNotices } from './review-storage-notices';
+import { BacklogMarks } from './store/backlog-marks';
 import { BlobGarbageCollector } from './store/blob-garbage-collector';
 import { RecordBlobRepair } from './store/record-blob-repair';
 import { ReviewBlobStore } from './store/review-blob-store';
 import { ReviewStateStore } from './store/review-state-store';
 import { ReviewStorageError } from './store/review-storage-error';
 import { StorageHealth } from './store/storage-health';
-import { FileGeneration, FrontierRecord, LEVEL_LABELS, LevelDocument, ReviewAtomState, ReviewFileState, ReviewLevel } from './types';
+import { BACKLOG_LEVEL, FileGeneration, FrontierRecord, LEVEL_LABELS, LevelDocument, ReviewAtomState, ReviewFileState, ReviewLevel, SHOWN_LEVELS, ShownLevel } from './types';
 
 const NOTIFICATION_PROGRESS_THRESHOLD = 50;
 
@@ -50,6 +51,7 @@ export class ReviewService implements vscode.Disposable {
     private readonly health = new StorageHealth();
     private readonly store: ReviewStateStore;
     private readonly blobs: ReviewBlobStore;
+    private readonly backlog: BacklogMarks;
     private readonly notices: ReviewStorageNotices;
     private readonly watcher: RepositoryWatcher;
     private readonly disposables: vscode.Disposable[] = [];
@@ -75,6 +77,7 @@ export class ReviewService implements vscode.Disposable {
     ) {
         this.blobs = new ReviewBlobStore(reviewDir(folder));
         this.store = new ReviewStateStore(reviewDir(folder), this.health, this.blobs);
+        this.backlog = new BacklogMarks(reviewDir(folder));
         this.notices = new ReviewStorageNotices(this.store, new RecordBlobRepair(this.store, this.blobs), this.health, logger, repoPath => this.queuePaths([repoPath]));
         this.watcher = new RepositoryWatcher(folder, reviewDir(folder), logger);
         this.disposables.push(this.watcher);
@@ -139,6 +142,7 @@ export class ReviewService implements vscode.Disposable {
             return;
         }
         this.logger.info(`Review started for ${this.folder.uri.fsPath}, repository root ${repoRoot}`);
+        await this.backlog.load().catch(error => this.logger.error('Backlog marks could not be read, the backlog starts empty', error));
         const engine = createReviewEngine({
             folderPath: this.folder.uri.fsPath,
             repoRoot,
@@ -198,8 +202,23 @@ export class ReviewService implements vscode.Disposable {
         return this.passes?.getFiles() ?? [];
     }
 
-    getAtomsByLevel(): Map<ReviewLevel, ReviewAtomState[]> {
-        return this.passes?.getAtomsByLevel() ?? new Map();
+    getAtomsByLevel(): Map<ShownLevel, ReviewAtomState[]> {
+        const byLevel = new Map<ShownLevel, ReviewAtomState[]>(SHOWN_LEVELS.map(level => [level, []]));
+        for (const file of this.getFiles()) {
+            for (const state of file.atoms) {
+                byLevel.get(this.shownLevelOf(file.path, state.level))?.push(state);
+            }
+        }
+        return byLevel;
+    }
+
+    shownLevelOf(repoPath: string, level: ReviewLevel): ShownLevel {
+        return level === 'new' && this.backlog.has(repoPath) ? BACKLOG_LEVEL : level;
+    }
+
+    async setBacklog(repoPaths: readonly string[], isInBacklog: boolean): Promise<void> {
+        await (isInBacklog ? this.backlog.add(repoPaths) : this.backlog.remove(repoPaths));
+        this.emitter.fire();
     }
 
     async levelDocument(repoPath: string, level: ReviewLevel): Promise<LevelDocument | null> {
@@ -377,6 +396,7 @@ export class ReviewService implements vscode.Disposable {
                     await this.runExclusive(async () => {
                         if (isFull) {
                             await passes.full();
+                            await this.backlog.retain(new Set(passes.getFiles().map(file => file.path)));
                         } else {
                             await passes.partial(fsPaths, false);
                             await passes.reloadRecords(recordFiles);

@@ -1,4 +1,4 @@
-import { FileGeneration, ReviewAtomState, ReviewLevel } from '../types';
+import { FileGeneration, ReviewAtomState, ShownLevel } from '../types';
 
 export interface LevelFileEntry {
     path: string;
@@ -16,14 +16,14 @@ export interface RepositoryNode {
 export interface LevelNode {
     type: 'level';
     project: string;
-    level: ReviewLevel;
+    level: ShownLevel;
     entries: LevelFileEntry[];
 }
 
 export interface FolderNode {
     type: 'folder';
     project: string;
-    level: ReviewLevel;
+    level: ShownLevel;
     displayPath: string;
     label: string;
     depth: number;
@@ -33,7 +33,7 @@ export interface FolderNode {
 export interface FileNode {
     type: 'file';
     project: string;
-    level: ReviewLevel;
+    level: ShownLevel;
     path: string;
     displayPath: string;
     states: ReviewAtomState[];

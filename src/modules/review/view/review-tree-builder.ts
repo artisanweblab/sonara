@@ -1,4 +1,4 @@
-import { ReviewAtomState, ReviewLevel } from '../types';
+import { ReviewAtomState, ShownLevel } from '../types';
 import { FileNode, FolderNode, LevelFileEntry, ReviewNode } from './review-node';
 
 export type TreeLayout = 'tree' | 'list';
@@ -45,7 +45,7 @@ function assignDepth(nodes: readonly ReviewNode[], depth: number): void {
 
 export function buildLevelChildren(
     project: string,
-    level: ReviewLevel,
+    level: ShownLevel,
     entries: readonly LevelFileEntry[],
     layout: TreeLayout,
     compact: boolean,
