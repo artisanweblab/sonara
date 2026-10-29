@@ -36,10 +36,12 @@ function moveActions(node: LevelContentNode): ActionItem[] {
 function fileActions(): ActionItem[] {
     return [
         SEPARATOR,
+        { label: 'Open with Default Application', command: 'sonara.review.openWithDefaultApp' },
         { label: 'Open Containing Folder', command: 'sonara.review.revealInOS' },
         { label: 'Copy Path', command: 'sonara.review.copyPath' },
         { label: 'Copy Relative Path', command: 'sonara.review.copyRelativePath' },
         SEPARATOR,
+        { label: 'Revert Changes', command: 'sonara.review.revert' },
         { label: 'Delete', command: 'sonara.review.delete' },
     ];
 }

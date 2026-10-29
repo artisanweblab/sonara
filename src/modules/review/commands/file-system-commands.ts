@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { PathKind, PathTarget, copyPaths, distinctTargets, moveToTrash, revealInOS, selectedNodes } from '../../../shared/file-actions';
+import { PathKind, PathTarget, copyPaths, distinctTargets, moveToTrash, openWithDefaultApp, revealInOS, selectedNodes } from '../../../shared/file-actions';
 import { inactiveMessage } from '../review-service';
 import { ReviewServices } from '../review-services';
 import { ReviewNode } from '../view/review-node';
@@ -45,6 +45,16 @@ export async function executeRevealInOS(services: ReviewServices, provider: Revi
     }
     const [target] = targets;
     await revealInOS(target, `Sonara Review: ${target ? vscode.workspace.asRelativePath(target.uri, false) : ''} is not on disk, it is deleted in the working tree.`);
+}
+
+export async function executeOpenWithDefaultApp(
+    services: ReviewServices,
+    provider: ReviewTreeProvider,
+    node: ReviewNode | undefined,
+    selection: readonly ReviewNode[] | undefined,
+): Promise<void> {
+    const targets = await selectedTargets(services, provider, node, selection);
+    await openWithDefaultApp(targets ?? [], 'Sonara Review: the file is not on disk, it is deleted in the working tree.');
 }
 
 export async function executeDelete(

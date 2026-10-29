@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ProjectCatalog } from '../../shared/project-catalog';
-import { PathTarget, copyPaths, distinctTargets, moveToTrash, revealInOS, selectedNodes } from '../../shared/file-actions';
+import { PathTarget, copyPaths, distinctTargets, moveToTrash, openWithDefaultApp, revealInOS, selectedNodes } from '../../shared/file-actions';
 import { describeTotals } from './code-map-format';
 import { CodeMapItem, CodeMapProvider } from './code-map-provider';
 import { CodeMapSession } from './code-map-session';
@@ -116,6 +116,8 @@ export function registerCodeMapModule(context: vscode.ExtensionContext, catalog:
             const [target] = targetsOf(selectedNodes(node, undefined));
             return revealInOS(target, `Sonara Code Map: ${target ? vscode.workspace.asRelativePath(target.uri, false) : ''} is no longer on disk.`);
         }),
+        vscode.commands.registerCommand('sonara.codeMap.openWithDefaultApp', (node: CodeMapItem | undefined, selection: CodeMapItem[] | undefined) =>
+            openWithDefaultApp(targetsOf(selectedNodes(node, selection)), 'Sonara Code Map: the file is no longer on disk.')),
         vscode.commands.registerCommand('sonara.codeMap.copyPath', (node: CodeMapItem | undefined, selection: CodeMapItem[] | undefined) =>
             copyPaths(targetsOf(selectedNodes(node, selection)), 'absolute')),
         vscode.commands.registerCommand('sonara.codeMap.copyRelativePath', (node: CodeMapItem | undefined, selection: CodeMapItem[] | undefined) =>

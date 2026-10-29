@@ -9,6 +9,7 @@ import { ReviewLogger } from './logging/review-logger';
 import { describeGeneration } from './model/file-generation';
 import { ProgressRunner } from './progress-runner';
 import { ReviewEngine, createReviewEngine } from './review-engine';
+import { ReviewFileReverter, RevertReport, RevertTarget } from './review-file-reverter';
 import { LevelMoveReport, LevelMoveRequest, LevelSelection, requestsFromSelections } from './review-level-mover';
 import { ReviewPasses } from './review-passes';
 import { ReviewStorageNotices } from './review-storage-notices';
@@ -63,6 +64,7 @@ export class ReviewService implements vscode.Disposable {
     private runningTasks = 0;
     private exclusive: Promise<void> = Promise.resolve();
     private engine: ReviewEngine | undefined;
+    private reverter: ReviewFileReverter | undefined;
     private passes: ReviewPasses | undefined;
     private collector: BlobGarbageCollector | undefined;
     private isStarted = false;
@@ -154,7 +156,8 @@ export class ReviewService implements vscode.Disposable {
             getFile: repoPath => this.passes?.getFile(repoPath),
         });
         this.engine = engine;
-        this.passes = new ReviewPasses(engine, this.store, this.logger, () => this.isDisposed, (repoPath, error) => void this.notices.onEvaluationError(repoPath, error), windowProgress);
+        this.reverter = new ReviewFileReverter(gitPath, repoRoot, engine.scope, this.logger);
+        this.passes =new ReviewPasses(engine, this.store, this.logger, () => this.isDisposed, (repoPath, error) => void this.notices.onEvaluationError(repoPath, error), windowProgress);
         this.collector = new BlobGarbageCollector(this.blobs, this.store, engine.journal, this.health, this.logger, () => this.runningTasks > 0 || engine.repository.isBusy());
         this.disposables.push(new vscode.Disposable(() => this.collector?.dispose()), new vscode.Disposable(() => engine.pool.dispose()));
         await this.recover(engine);
@@ -282,6 +285,36 @@ export class ReviewService implements vscode.Disposable {
         }], target);
         const remainingOnLevel = this.getFile(change.repoPath)?.atoms.filter(state => state.level === change.level).length ?? 0;
         return { report, remainingOnLevel };
+    }
+
+    async revertFiles(repoPaths: readonly string[]): Promise<RevertReport> {
+        const engine = this.engine;
+        const passes = this.passes;
+        const reverter = this.reverter;
+        const report: RevertReport = { reverted: [], failures: [] };
+        if (!this.isStarted || !engine || !passes || !reverter) {
+            return report;
+        }
+        const targets: RevertTarget[] = [];
+        for (const repoPath of repoPaths) {
+            const file = this.getFile(repoPath);
+            if (!file) {
+                continue;
+            }
+            if (file.scanned.kind === 'special') {
+                report.failures.push(`${repoPath}: a submodule, link or conflicted file is not reverted here`);
+                continue;
+            }
+            targets.push({ repoPath, isInHead: file.scanned.isInHead });
+        }
+        await this.runExclusive(async () => {
+            const result = await reverter.revert(targets);
+            report.reverted.push(...result.reverted);
+            report.failures.push(...result.failures);
+            await passes.partial(result.reverted.map(repoPath => engine.scope.absolutePath(repoPath)), true);
+        });
+        this.emitter.fire();
+        return report;
     }
 
     requestFullScan(): void {

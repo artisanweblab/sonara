@@ -72,6 +72,16 @@ export async function revealInOS(target: PathTarget | undefined, missingMessage:
     await vscode.commands.executeCommand('revealFileInOS', target.uri);
 }
 
+export async function openWithDefaultApp(targets: readonly PathTarget[], missingMessage: string): Promise<void> {
+    for (const target of targets.filter(current => !current.isFolder)) {
+        if (!await existsOnDisk(target.uri)) {
+            await vscode.window.showInformationMessage(missingMessage);
+            continue;
+        }
+        await vscode.env.openExternal(target.uri);
+    }
+}
+
 export interface TrashMessages {
     source: string;
     nothingOnDisk: string;

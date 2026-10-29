@@ -141,6 +141,11 @@
         "icon": "$(collapse-all)"
       },
       {
+        "command": "sonara.codeMap.openWithDefaultApp",
+        "title": "Open with Default Application",
+        "category": "Sonara"
+      },
+      {
         "command": "sonara.codeMap.revealInOS",
         "title": "Open Containing Folder",
         "category": "Sonara"
@@ -421,8 +426,18 @@
         "category": "Sonara"
       },
       {
+        "command": "sonara.review.openWithDefaultApp",
+        "title": "Open with Default Application",
+        "category": "Sonara"
+      },
+      {
         "command": "sonara.review.revealInOS",
         "title": "Open Containing Folder",
+        "category": "Sonara"
+      },
+      {
+        "command": "sonara.review.revert",
+        "title": "Revert Changes",
         "category": "Sonara"
       },
       {
@@ -574,6 +589,11 @@
           "group": "inline@2"
         },
         {
+          "command": "sonara.codeMap.openWithDefaultApp",
+          "when": "view == sonara.codeMap && viewItem =~ /^codeMap(File)$/",
+          "group": "3_reveal@0"
+        },
+        {
           "command": "sonara.codeMap.revealInOS",
           "when": "view == sonara.codeMap && viewItem =~ /^codeMap(File|Folder|Repository)$/",
           "group": "3_reveal@1"
@@ -704,9 +724,19 @@
           "group": "2_moveTo@6"
         },
         {
+          "command": "sonara.review.openWithDefaultApp",
+          "when": "view == sonara.review && viewItem =~ /^reviewFile\\./",
+          "group": "3_reveal@0"
+        },
+        {
           "command": "sonara.review.revealInOS",
           "when": "view == sonara.review && viewItem =~ /^review(File|Folder)\\./",
           "group": "3_reveal@1"
+        },
+        {
+          "command": "sonara.review.revert",
+          "when": "view == sonara.review && viewItem =~ /^review(File|Folder)\\./",
+          "group": "5_modification@0"
         },
         {
           "command": "sonara.review.copyPath",
@@ -739,6 +769,10 @@
           "when": "false"
         },
         {
+          "command": "sonara.codeMap.openWithDefaultApp",
+          "when": "false"
+        },
+        {
           "command": "sonara.codeMap.revealInOS",
           "when": "false"
         },
@@ -755,7 +789,15 @@
           "when": "false"
         },
         {
+          "command": "sonara.review.openWithDefaultApp",
+          "when": "false"
+        },
+        {
           "command": "sonara.review.revealInOS",
+          "when": "false"
+        },
+        {
+          "command": "sonara.review.revert",
           "when": "false"
         },
         {

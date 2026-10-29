@@ -7,7 +7,8 @@ import { ReviewCliLauncher } from './cli/launcher-installer';
 import { OutputReviewLogger } from './logging/output-review-logger';
 import { ReviewLogger } from './logging/review-logger';
 import { executeMoveChange, executeMoveChangeAtCursor, executeNavigateNewChange } from './commands/change-commands';
-import { executeCopyPaths, executeDelete, executeRevealInOS } from './commands/file-system-commands';
+import { executeCopyPaths, executeDelete, executeOpenWithDefaultApp, executeRevealInOS } from './commands/file-system-commands';
+import { executeRevert } from './commands/revert-command';
 import { MoveDirection, executeMoveLevel } from './commands/move-level-command';
 import { executeCheckStorage } from './commands/check-storage-command';
 import { executeOpenPreview } from './commands/preview-command';
@@ -203,6 +204,10 @@ export function registerReviewModule(context: vscode.ExtensionContext, catalog: 
         loggedCommand(logger, 'sonara.review.copyRelativePath', (node: unknown, selection: unknown) =>
             executeCopyPaths(services, provider, 'relative', node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
         loggedCommand(logger, 'sonara.review.revealInOS', (node: unknown) => executeRevealInOS(services, provider, node as ReviewNode | undefined)),
+        loggedCommand(logger, 'sonara.review.openWithDefaultApp', (node: unknown, selection: unknown) =>
+            executeOpenWithDefaultApp(services, provider, node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
+        loggedCommand(logger, 'sonara.review.revert', (node: unknown, selection: unknown) =>
+            executeRevert(services, node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
         loggedCommand(logger, 'sonara.review.delete', (node: unknown, selection: unknown) =>
             executeDelete(services, provider, node as ReviewNode | undefined, selection as ReviewNode[] | undefined)),
         loggedCommand(logger, 'sonara.review.showActions', (node: unknown, selection: unknown) =>
