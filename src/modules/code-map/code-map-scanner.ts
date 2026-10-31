@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { FileMeasure, measureFile } from './file-measure';
+import { FileMeasure, measureFile } from '../../shared/file-measure';
 import { GitFiles, LineChange } from './git-files';
 
 const MEASURE_BATCH = 64;

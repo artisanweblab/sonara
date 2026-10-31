@@ -50,13 +50,20 @@ const FILE_STATUSES: readonly { status: string; letter: string; word: string }[]
     { status: 'U', letter: 'U', word: 'unmerged' },
 ];
 
-function describeLevel(summary: LevelSummary): string {
+function describeFiles(summary: LevelSummary, label: string): string {
     const byStatus = FILE_STATUSES
         .filter(entry => (summary.filesByStatus.get(entry.status) ?? 0) > 0)
         .map(entry => `${entry.letter}${summary.filesByStatus.get(entry.status)}`)
         .join(' ');
-    const files = byStatus ? `files: ${summary.fileCount} (${byStatus})` : `files: ${summary.fileCount}`;
-    return `${files} · ${describeLines(summary)}`;
+    return byStatus ? `${label}: ${summary.fileCount} (${byStatus})` : `${label}: ${summary.fileCount}`;
+}
+
+function describeChangedFiles(summary: LevelSummary): string {
+    return describeFiles(summary, 'changed');
+}
+
+function describeLevel(summary: LevelSummary): string {
+    return `${describeFiles(summary, 'files')} · ${describeLines(summary)}`;
 }
 
 function describeLines(summary: LevelSummary): string {
@@ -219,8 +226,9 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewNode>, 
         if (service && isActive) {
             const summary = summarizeLevel(service.getFiles().flatMap(file => file.atoms));
             const newCount = summarizeLevel(service.getAtomsByLevel().get('new') ?? []).fileCount;
-            item.description = `new: ${newCount} · ${describeLevel(summary)}`;
-            item.tooltip = `${node.project}\n${levelTooltip(summary)}`;
+            const trackedLines = service.getTrackedLines();
+            item.description = [`new: ${newCount}`, describeChangedFiles(summary), trackedLines === null ? '' : `lines: ${trackedLines}`].filter(part => part !== '').join(' · ');
+            item.tooltip = `${node.project}\n${countOf(summary.fileCount, 'changed file')}${trackedLines === null ? '' : `\n${countOf(trackedLines, 'line')} in the files tracked by git`}`;
         } else {
             item.description = service?.getIdleReason() || undefined;
             item.tooltip = node.project;

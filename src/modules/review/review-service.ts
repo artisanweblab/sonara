@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { SonaraProject } from '../../shared/sonara-project';
 import { reviewDir } from '../../shared/project-layout';
 import { GitCommandError } from './git/git-command-error';
+import { literal } from './git/diff-options';
 import { GitReader } from './git/git-reader';
 import { RepositoryChange, RepositoryWatcher } from './git/repository-watcher';
 import { ReviewLogger } from './logging/review-logger';
@@ -13,6 +14,7 @@ import { ReviewFileReverter, RevertReport, RevertTarget } from './review-file-re
 import { LevelMoveReport, LevelMoveRequest, LevelSelection, requestsFromSelections } from './review-level-mover';
 import { ReviewPasses } from './review-passes';
 import { ReviewStorageNotices } from './review-storage-notices';
+import { TrackedLines } from './tracked-lines';
 import { BacklogMarks } from './store/backlog-marks';
 import { BlobGarbageCollector } from './store/blob-garbage-collector';
 import { RecordBlobRepair } from './store/record-blob-repair';
@@ -65,6 +67,8 @@ export class ReviewService implements vscode.Disposable {
     private exclusive: Promise<void> = Promise.resolve();
     private engine: ReviewEngine | undefined;
     private reverter: ReviewFileReverter | undefined;
+    private trackedLines: TrackedLines | undefined;
+    private lineCounting: Promise<void> = Promise.resolve();
     private passes: ReviewPasses | undefined;
     private collector: BlobGarbageCollector | undefined;
     private isStarted = false;
@@ -157,6 +161,11 @@ export class ReviewService implements vscode.Disposable {
         });
         this.engine = engine;
         this.reverter = new ReviewFileReverter(gitPath, repoRoot, engine.scope, this.logger);
+        this.trackedLines = new TrackedLines(
+            new GitReader(repoRoot, this.logger, gitPath),
+            engine.scope.projectPrefix ? literal(engine.scope.projectPrefix) : '.',
+            repoPath => engine.scope.absolutePath(repoPath),
+        );
         this.passes =new ReviewPasses(engine, this.store, this.logger, () => this.isDisposed, (repoPath, error) => void this.notices.onEvaluationError(repoPath, error), windowProgress);
         this.collector = new BlobGarbageCollector(this.blobs, this.store, engine.journal, this.health, this.logger, () => this.runningTasks > 0 || engine.repository.isBusy());
         this.disposables.push(new vscode.Disposable(() => this.collector?.dispose()), new vscode.Disposable(() => engine.pool.dispose()));
@@ -213,6 +222,10 @@ export class ReviewService implements vscode.Disposable {
             }
         }
         return byLevel;
+    }
+
+    getTrackedLines(): number | null {
+        return this.trackedLines?.total() ?? null;
     }
 
     shownLevelOf(repoPath: string, level: ReviewLevel): ShownLevel {
@@ -439,6 +452,7 @@ export class ReviewService implements vscode.Disposable {
                         }
                     });
                     this.emitter.fire();
+                    this.countLines(isFull, fsPaths);
                 } catch (error) {
                     this.logger.error('Review recompute failed', error);
                 }
@@ -446,6 +460,22 @@ export class ReviewService implements vscode.Disposable {
         } finally {
             this.isDraining = false;
         }
+    }
+
+    private countLines(isAll: boolean, fsPaths: readonly string[]): void {
+        const counter = this.trackedLines;
+        const scope = this.engine?.scope;
+        if (!counter || !scope) {
+            return;
+        }
+        this.lineCounting = this.lineCounting.then(async () => {
+            if (isAll) {
+                await counter.refreshAll();
+            } else {
+                await counter.refreshPaths(fsPaths.flatMap(fsPath => scope.toRepoPath(fsPath) ?? []));
+            }
+            this.emitter.fire();
+        }).catch(error => this.logger.error('Counting the lines of tracked files failed', error));
     }
 
     private runExclusive(task: () => Promise<void>): Promise<void> {
